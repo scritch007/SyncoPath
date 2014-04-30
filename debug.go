@@ -2,7 +2,7 @@ package main
 
 import (
 	"os"
-//	"encoding/json"
+//  "encoding/json"
 	"fmt"
 	"io/ioutil"
 	"github.com/bitly/go-simplejson"
@@ -53,7 +53,7 @@ func (p *DebugSyncPlugin)BrowseFolder(folder string) (error, []SyncResourceInfo)
 	if folder == "/"{
 		jsonFolder = p.storedStruct
 	}else{
-  	splits := strings.Split(folder, "/")
+	splits := strings.Split(folder, "/")
 		jsonFolder = p.storedStruct.GetPath(splits[1:]...)
 		if jsonFolder == nil{
 			return errors.New("Folder doesn't exist"), nil
@@ -66,7 +66,7 @@ func (p *DebugSyncPlugin)BrowseFolder(folder string) (error, []SyncResourceInfo)
 	}
 	var nbEntries = 0
 	var result = make([]SyncResourceInfo, 10)
-	for key, _ := range entries{
+	for key := range entries{
 		je := jsonFolder.Get(key)
 		isDir := je.Get("IsDir").MustBool()
 		if isDir{
@@ -90,7 +90,7 @@ func (p *DebugSyncPlugin)BrowseFolder(folder string) (error, []SyncResourceInfo)
 func (p *DebugSyncPlugin)HasFolder(folder string) bool{
 	splits := strings.Split(folder, "/")
 	res := p.storedStruct.GetPath(splits[1:]...)
-	return !res.IsNil()
+	return nil != res.MustMap()
 }
 
 func (p *DebugSyncPlugin)RemoveResource(r SyncResourceInfo) error{
@@ -107,14 +107,15 @@ func (p *DebugSyncPlugin)AddResource(r *SyncResourceInfo) error{
 		}
 		temp, found := j.CheckGet(path)
 		if !found{
-			temp, _ := simplejson.NewJson([]byte("{}"))
-			fmt.Println("Yes creating the following entry", temp)
-			j.Set(path, temp)
+			return errors.New("Path doesn't exist")
 		}
 		j = temp
 	}
 	j.Set(r.Name, r)
-	res, _ := p.storedStruct.MarshalJSON()
+	res, err := p.storedStruct.MarshalJSON()
+	if err != nil{
+		return err
+	}
 	ioutil.WriteFile(p.file, res, 777)
 	return nil
 }

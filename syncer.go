@@ -2,7 +2,9 @@ package main
 
 import (
 	"io/ioutil"
+	"path"
 	"fmt"
+	//"os"
 )
 
 type SyncResourceInfo struct {
@@ -40,16 +42,26 @@ func (s *Syncer)sync(syncer SyncPlugin, real_path string, folder string){
 		fmt.Print("Something went wrong ", err)
 	}
 	_, entries := syncer.BrowseFolder(folder)
+	fmt.Println("Check for folder / ", syncer.HasFolder("/"))
+	//os.Exit(1)
 	for _, file := range fileList{
-		var entry = SyncResourceInfo{Name:file.Name(), Parent:folder, IsDir:file.IsDir()}
+		//Lookup for file and folder on the file system
+		var entry = SyncResourceInfo{Name:file.Name(), Parent:folder, IsDir:file.IsDir(), Path:path.Join(real_path, file.Name())}
 		if entry.IsDir{
+			//Entry is a directory, create the directory remotely
 			folder_path := entry.Parent
 			if entry.Parent != "/"{
+				//Special Case of the local file
 				folder_path += "/"
 			}
 			folder_path += entry.Name
 			if !syncer.HasFolder(folder_path){
-				syncer.AddResource(&entry)
+				err = syncer.AddResource(&entry)
+				if err != nil{
+					fmt.Println("Failed to create Resource folder ", folder_path, " with error ", err)
+					//Skip this folder, since we couldn't create the folder itself
+					continue
+				}
 			}
 			s.sync(syncer, real_path + "/" +entry.Name, folder_path)
 		}else{
@@ -60,7 +72,10 @@ func (s *Syncer)sync(syncer SyncPlugin, real_path string, folder string){
 				}
 			}
 			if (!found){
-				syncer.AddResource(&entry)
+				err = syncer.AddResource(&entry)
+				if (err != nil){
+					fmt.Println("Failed to add entry ", entry.Name, " with error ", err)
+				}
 			}
 		}
 	}

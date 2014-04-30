@@ -48,6 +48,7 @@ func main() {
 	}
 	if nil != err{
 		fmt.Println("Failed to instantiate plugin with error ", err)
+		os.Exit(1)
 	}
 
 	var syncer = NewSyncer(local_folder)
