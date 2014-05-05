@@ -2,16 +2,21 @@ package main
 
 import (
 	"net/url"
+	"net/textproto"
 	"errors"
 	"os"
 	"fmt"
-	"github.com/bitly/go-simplejson"
+	"github.com/scritch007/go-simplejson"
 	"encoding/json"
 	"encoding/xml"
 	"io/ioutil"
 	"code.google.com/p/goauth2/oauth"
 	"strings"
 	"bytes"
+	"mime/multipart"
+	"io"
+	"net/http"
+	//"net/http/httputil"
 )
 
 var oauthCfg = &oauth.Config {
@@ -35,6 +40,7 @@ var oauthCfg = &oauth.Config {
 				Scope: "https://www.googleapis.com/auth/userinfo.profile https://picasaweb.google.com/data/",
 		}
 
+const albumFeedURL = "https://picasaweb.google.com/data/feed/api/user/default"
 
 type picasaAuthStruct struct{
 	AccessToken string
@@ -48,20 +54,6 @@ type PicasaSyncPlugin struct{
 }
 
 func NewPicasaSyncPlugin(configFile string) (*PicasaSyncPlugin, error){
-	var album Album
-	album.Xmlns = "http://www.w3.org/2005/Atom"
-  album.XmlnsMedia = "http://search.yahoo.com/mrss/"
-  album.XmlnsGPhoto = "http://schemas.google.com/photos/2007"
-  album.Category.Scheme = "tada"
-  album.Category.Term = "titi"
-  album.Title = "badada"
-  album.Access = "private"
-  output, err := xml.MarshalIndent(&album, "  ", "    ")
-  if err != nil{
-  	fmt.Println(err)
-	}else{
-		fmt.Println("", string(output))
-	}
 
 	if _, err := os.Stat(configFile); os.IsNotExist(err){
 		//Now ask the user to go to the correct place
@@ -89,7 +81,6 @@ func NewPicasaSyncPlugin(configFile string) (*PicasaSyncPlugin, error){
 	p.configFile = configFile
 	p.authStruct.AccessToken = token.Get("AccessToken").MustString()
 	p.authStruct.RefreshToken = token.Get("RefreshToken").MustString()
-	fmt.Println(p.authStruct)
 	p.initializationDone = false
 
 	t := &oauth.Transport{Config: oauthCfg}
@@ -107,36 +98,59 @@ func (p *PicasaSyncPlugin)Name() string{
 	return "Picasa"
 }
 
-const albumFeedURL = "https://picasaweb.google.com/data/feed/api/user/default"
+func (p *PicasaSyncPlugin)browseAlbum(url string) (error, *PicasaMainResponse){
+	t := &oauth.Transport{Config: oauthCfg}
+	t.Token = &oauth.Token{AccessToken: p.authStruct.AccessToken, RefreshToken: p.authStruct.RefreshToken}
+	resp, err := t.Client().Get(url)
+	if err != nil{
+		return err, nil
+	}
+	buf, err := ioutil.ReadAll(resp.Body)
+	if err != nil{
+  	return err, nil
+  }
+  parsedResp, _ := PicasaParse(buf)
+  if err != nil{
+  	return err, nil
+  }
+  return nil, parsedResp
+}
 
 func (p *PicasaSyncPlugin)BrowseFolder(f string) (error, []SyncResourceInfo){
-
-	if f == "/"{
-		if !p.initializationDone{
-			t := &oauth.Transport{Config: oauthCfg}
-			t.Token = &oauth.Token{AccessToken: p.authStruct.AccessToken, RefreshToken: p.authStruct.RefreshToken}
-			resp, err := t.Client().Get(albumFeedURL + "?alt=json")
-			if err != nil{
-				fmt.Println("Failed to retrieve information")
-				return err, nil
-			}else{
-				fmt.Println("Got some information!!!")
-			}
-			buf, err := ioutil.ReadAll(resp.Body)
-			m, _ := PicasaParse(buf)
-			p.resp = m
-			p.initializationDone = true
+	var parsedResp *PicasaMainResponse
+	var url string
+	if !p.initializationDone {
+		url = albumFeedURL + "?alt=json"
+		err, parsedResp  := p.browseAlbum(url)
+		if err != nil{
+			return err, nil
 		}
-
-		var result = make([]SyncResourceInfo, len(p.resp.Feed.Entries))
-		for i, album := range p.resp.Feed.Entries{
-				//alb := chromecasa.Folder{Name:album.Name.Value, Id:album.Id.Value, Icon: album.Media.Icon[0].Url, Display: true, Browse: false}
-				result[i] = SyncResourceInfo{Name:album.Name.Value, Path:album.Id.Value, Parent:f, IsDir: true}
-		}
-		return nil, result
+		p.resp = parsedResp
+	}
+	if f == ""{
+		return nil, make([]SyncResourceInfo, 0)
 	}
 	//Now we're browsing a folder
-	return errors.New("Not Available"), nil
+	albumName := p.buildFolderName(f)
+	album := p.getFolder(albumName)
+	if nil == album{
+		return nil, make([]SyncResourceInfo, 0)
+	}
+
+	url = albumFeedURL + "/albumid/" + album.Id.Value + "?alt=json&kind=photo"
+	err, parsedResp := p.browseAlbum(url)
+	if err != nil{
+		return err, nil
+	}
+	var result = make([]SyncResourceInfo, len(parsedResp.Feed.Entries))
+
+	for i, album := range parsedResp.Feed.Entries{
+		//alb := chromecasa.Folder{Name:album.Name.Value, Id:album.Id.Value, Icon: album.Media.Icon[0].Url, Display: true, Browse: false}
+		name := album.Title.Value
+		result[i] = SyncResourceInfo{Name:name, Path:album.Id.Value, Parent:f, IsDir: true}
+	}
+	return nil, result
+
 }
 func (p *PicasaSyncPlugin)RemoveResource(r SyncResourceInfo) error{
 	return errors.New("Not available")
@@ -148,7 +162,7 @@ type Category struct{
 	Term   string `xml:"term,attr"`
 }
 
-type Album struct {
+type XmlAlbum struct {
 	XMLName      xml.Name    `xml:"entry"`
 	Xmlns        string      `xml:"xmlns,attr"`
 	XmlnsMedia   string      `xml:"xmlns:media,attr"`
@@ -160,8 +174,17 @@ type Album struct {
 	Comment      string      `xml:",comment"`
 }
 
+type XmlPhoto struct {
+	XMLName      xml.Name    `xml:"entry"`
+	Xmlns        string      `xml:"xmlns,attr"`
+	Title        string      `xml:"title"`
+	Category     Category    `xml:"category"`
+	Summary      string      `xml:"summary"`
+	Comment      string      `xml:",comment"`
+}
+
 func (p *PicasaSyncPlugin)createAlbum(albumName string) error{
-	var album Album
+	var album XmlAlbum
 	album.Xmlns = "http://www.w3.org/2005/Atom"
   album.XmlnsMedia = "http://search.yahoo.com/mrss/"
   album.XmlnsGPhoto = "http://schemas.google.com/photos/2007"
@@ -185,26 +208,114 @@ func (p *PicasaSyncPlugin)createAlbum(albumName string) error{
   return nil
 }
 
+func (p *PicasaSyncPlugin)uploadPhoto(in_album *PicasaEntry, r *SyncResourceInfo) error{
+	body_buf := bytes.NewBufferString("")
+  body_writer := multipart.NewWriter(body_buf)
+
+  boundary := body_writer.Boundary()
+
+  /* Create a completely custom Form Part (or in this case, a file) */
+  // http://golang.org/src/pkg/mime/multipart/writer.go?s=2274:2352#L86
+  mh := make(textproto.MIMEHeader)
+  mh.Set("Content-Type", "application/atom+xml")
+  part_writer, err := body_writer.CreatePart(mh)
+  //TODO create the xml content for the file
+  if nil != err {
+    panic(err.Error())
+  }
+
+  var photo XmlPhoto
+	photo.Xmlns = "http://www.w3.org/2005/Atom"
+  photo.Title = r.Name
+  photo.Category.Term = "http://schemas.google.com/photos/2007#photo"
+  photo.Category.Scheme = "http://schemas.google.com/g/2005#kind"
+  output, _ := xml.MarshalIndent(&photo, "  ", "    ")
+  io.Copy(part_writer, bytes.NewBuffer(output))
+
+  mh2 := make(textproto.MIMEHeader)
+  mh2.Set("Content-Type", r.MimeType)
+  //TODO open the file
+  file, err := os.Open(r.Path)
+  if err != nil{
+  	return errors.New("Couldn't read file from the filesystem")
+  }
+  defer file.Close()
+
+  file_writer, err := body_writer.CreatePart(mh2)
+  if nil != err {
+    panic(err.Error())
+  }
+  buff, _ := ioutil.ReadAll(file)
+  io.Copy(file_writer, bytes.NewBuffer(buff))
+
+  /* Close the body and send the request */
+  body_writer.Close()
+
+  t := &oauth.Transport{Config: oauthCfg}
+	t.Token = &oauth.Token{AccessToken: p.authStruct.AccessToken, RefreshToken: p.authStruct.RefreshToken}
+
+	request_body, err := ioutil.ReadAll(body_buf)
+	//DO call
+	uri := albumFeedURL + "/albumid/" + in_album.Id.Value
+	request, err := http.NewRequest("POST", uri, bytes.NewBuffer(request_body))
+	content_type := "multipart/related; boundary=\"" + boundary + "\""
+	request.Header.Set("Content-Type", content_type)
+	//request.Header.Set("Content-Length", len(body_buf))
+	if nil != err {
+		return errors.New("Failed to create new Request")
+	}
+	//dump, err := httputil.DumpRequest(request, false)
+  //fmt.Println(string(dump))
+
+	//resp, err := t.Client().Post(uri, content_type, body_buf)
+	resp, err := t.Client().Do(request)
+  if nil != err {
+  	if nil != resp{
+  		body, _ := ioutil.ReadAll(resp.Body)
+  	  fmt.Println(body)
+  	}
+    panic(err.Error())
+  }
+
+  /* Handle the response */
+  defer resp.Body.Close()
+  body, _ := ioutil.ReadAll(resp.Body)
+  fmt.Println("I did manage to send something, but it was too fast for sure")
+  fmt.Println("Whouch got and error but nothing printed", err, string(body))
+  if nil != err{
+  	fmt.Println("Whouch got and error but nothing printed", err, string(body))
+  	return err
+  }
+  return nil
+}
+
 func (p *PicasaSyncPlugin)AddResource(r *SyncResourceInfo) error{
 	fmt.Println("Adding new resource ", r.Name)
 	if r.IsDir{
 		//We need to create the new repository
-		folder_name := r.Parent + "/" + r.Name
+		var folder_name string
+		if r.Parent == "/"{
+			folder_name = "/" + r.Name
+		}else{
+			folder_name = r.Parent + "/" + r.Name
+		}
 		album_name := p.buildFolderName(folder_name)
 		album := p.getFolder(album_name)
 		if album != nil{
 			return errors.New("This album already exist, cannot create it")
 		}
-
+		p.createAlbum(album_name)
 		//Update our information now, so reset the initializationDone flag...
 		p.initializationDone = false
-		p.BrowseFolder("/")
+		p.BrowseFolder("")
+		return nil
 	}else{
 		album_name := p.buildFolderName(r.Parent)
 		album := p.getFolder(album_name)
 		if album == nil{
-			return errors.New("Adding file to a now existing folder")
+			return errors.New("Can't add entry " + r.Name + "the folder " + album_name + " doesn't exist")
 		}
+		return p.uploadPhoto(album, r)
 	}
 	return errors.New("Not available")
 }
@@ -220,12 +331,14 @@ func (p *PicasaSyncPlugin)buildFolderName(folder string) string{
 		folder_name += strings.Join(splits[2:], ", ")
 		folder_name += ")"
 	}
+	//fmt.Printf("Hey you \n############################\n%s=>\n%s\n => %s#######################\n", folder, splits, folder_name)
 	return folder_name
 }
 
 //Check if the album name is in our list
 func (p *PicasaSyncPlugin)getFolder(album_name string) *PicasaEntry{
 	for _, album := range p.resp.Feed.Entries{
+		//fmt.Printf("\n@@@@@@@@@@@@@@@@@@@@@@\n%s vs %s\n@@@@@@@@@@@@@@@@@@@@@@@@@@\n", album.Title.Value, album_name)
 		if album.Title.Value == album_name{
 			return &album
 		}

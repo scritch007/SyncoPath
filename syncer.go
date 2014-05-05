@@ -44,12 +44,14 @@ func (s *Syncer)sync(syncer SyncPlugin, real_path string, folder string){
 	if (nil != err){
 		fmt.Print("Something went wrong ", err)
 	}
-	_, entries := syncer.BrowseFolder(folder)
-	fmt.Println("Check for folder / ", syncer.HasFolder("/"))
+	err, entries := syncer.BrowseFolder(folder)
+	if err != nil{
+		fmt.Println("Failed to browse entries ", err)
+		return
+	}
 	//os.Exit(1)
 	for _, file := range fileList{
 		//Lookup for file and folder on the file system
-
 		extensionSplit := strings.Split(file.Name(), ".")
 		extension := extensionSplit[len(extensionSplit) - 1]
 		//Extension needs to have the . otherwise it will fail
@@ -75,6 +77,7 @@ func (s *Syncer)sync(syncer SyncPlugin, real_path string, folder string){
 		}else{
 			var found = false
 			for _, existing_entry := range entries{
+				//fmt.Printf("Comparing %s with %s \n", existing_entry.Name, entry.Name)
 				if existing_entry.Name == entry.Name{
 					found = true
 				}
