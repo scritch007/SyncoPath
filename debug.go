@@ -2,10 +2,10 @@ package main
 
 import (
 	"os"
-//  "encoding/json"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"github.com/bitly/go-simplejson"
+	"github.com/scritch007/go-simplejson"
 	"strings"
 	"errors"
 )
@@ -22,7 +22,6 @@ func NewDebugSyncPlugin(f string) (*DebugSyncPlugin, error){
 	if _, err := os.Stat(a.file ); os.IsNotExist(err){
 		f, err := os.Create(a.file)
 		if err != nil {
-			fmt.Println(err)
 			return nil, err
 		}
 		f.Close()
@@ -111,8 +110,24 @@ func (p *DebugSyncPlugin)AddResource(r *SyncResourceInfo) error{
 		}
 		j = temp
 	}
-	j.Set(r.Name, r)
-	res, err := p.storedStruct.MarshalJSON()
+
+	/* We are converting the entry into a new object. Though we will loose the reference,
+	*  This will allow adding new entries to this folder.
+	*/
+	//newJson := r
+
+	newEntry, err := json.Marshal(r)
+	if err != nil{
+		return err
+	}
+	newJson, err := simplejson.NewJson(newEntry)
+
+	j.Set(r.Name, *newJson)
+	if err != nil{
+		fmt.Println("Couldn't call the Map")
+		return err
+	}
+	res, err := p.storedStruct.MarshalJSONIndent("", "  ")
 	if err != nil{
 		return err
 	}

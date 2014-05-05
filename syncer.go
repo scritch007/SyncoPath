@@ -4,6 +4,8 @@ import (
 	"io/ioutil"
 	"path"
 	"fmt"
+	"mime"
+	"strings"
 	//"os"
 )
 
@@ -12,6 +14,7 @@ type SyncResourceInfo struct {
 	Path string
 	Parent string
 	IsDir bool
+	MimeType string
 }
 
 type SyncPlugin interface{
@@ -46,7 +49,12 @@ func (s *Syncer)sync(syncer SyncPlugin, real_path string, folder string){
 	//os.Exit(1)
 	for _, file := range fileList{
 		//Lookup for file and folder on the file system
-		var entry = SyncResourceInfo{Name:file.Name(), Parent:folder, IsDir:file.IsDir(), Path:path.Join(real_path, file.Name())}
+
+		extensionSplit := strings.Split(file.Name(), ".")
+		extension := extensionSplit[len(extensionSplit) - 1]
+		//Extension needs to have the . otherwise it will fail
+		mimeType := mime.TypeByExtension("." + extension)
+		var entry = SyncResourceInfo{Name:file.Name(), Parent:folder, IsDir:file.IsDir(), Path:path.Join(real_path, file.Name()), MimeType:mimeType}
 		if entry.IsDir{
 			//Entry is a directory, create the directory remotely
 			folder_path := entry.Parent
