@@ -1,25 +1,24 @@
 package main
 
 import (
-	"os"
 	"encoding/json"
-	"fmt"
-	"io/ioutil"
-	"github.com/scritch007/go-simplejson"
-	"strings"
 	"errors"
+	"fmt"
+	"github.com/scritch007/go-simplejson"
+	"io/ioutil"
+	"os"
+	"strings"
 )
 
-type DebugSyncPlugin struct{
-	file string
+type DebugSyncPlugin struct {
+	file         string
 	storedStruct *simplejson.Json
 }
 
-
-func NewDebugSyncPlugin(f string) (*DebugSyncPlugin, error){
+func NewDebugSyncPlugin(f string) (*DebugSyncPlugin, error) {
 	var a = new(DebugSyncPlugin)
 	a.file = f
-	if _, err := os.Stat(a.file ); os.IsNotExist(err){
+	if _, err := os.Stat(a.file); os.IsNotExist(err) {
 		f, err := os.Create(a.file)
 		if err != nil {
 			return nil, err
@@ -30,45 +29,45 @@ func NewDebugSyncPlugin(f string) (*DebugSyncPlugin, error){
 		ioutil.WriteFile(a.file, res, 777)
 	}
 	file, err := ioutil.ReadFile(a.file)
-	if err != nil{
+	if err != nil {
 		fmt.Printf("File error: %v\n", err)
 		return nil, err
 	}
 	a.storedStruct, err = simplejson.NewJson(file)
-	if err != nil{
+	if err != nil {
 		fmt.Print("Couldn't deserialize file")
 		return nil, err
 	}
 	return a, nil
 }
 
-func (p *DebugSyncPlugin)Name() string{
+func (p *DebugSyncPlugin) Name() string {
 	return "DebugSyncPlugin"
 }
 
-func (p *DebugSyncPlugin)BrowseFolder(folder string) (error, []SyncResourceInfo){
+func (p *DebugSyncPlugin) BrowseFolder(folder string) (error, []SyncResourceInfo) {
 
-  var jsonFolder *simplejson.Json
-	if folder == "/"{
+	var jsonFolder *simplejson.Json
+	if folder == "/" {
 		jsonFolder = p.storedStruct
-	}else{
-	splits := strings.Split(folder, "/")
+	} else {
+		splits := strings.Split(folder, "/")
 		jsonFolder = p.storedStruct.GetPath(splits[1:]...)
-		if jsonFolder == nil{
+		if jsonFolder == nil {
 			return errors.New("Folder doesn't exist"), nil
 		}
 	}
 
 	entries, err := jsonFolder.Map()
-	if nil != err{
+	if nil != err {
 		return errors.New("Wrong type"), nil
 	}
 	var nbEntries = 0
 	var result = make([]SyncResourceInfo, 10)
-	for key := range entries{
+	for key := range entries {
 		je := jsonFolder.Get(key)
 		isDir := je.Get("IsDir").MustBool()
-		if isDir{
+		if isDir {
 			continue
 		}
 		result[nbEntries].Name = je.Get("Name").MustString()
@@ -76,8 +75,8 @@ func (p *DebugSyncPlugin)BrowseFolder(folder string) (error, []SyncResourceInfo)
 		result[nbEntries].Path = je.Get("Path").MustString()
 		result[nbEntries].IsDir = isDir
 
-		if nbEntries + 2 > cap(result){
-			newSlice := make([]SyncResourceInfo, cap(result) * 2)
+		if nbEntries+2 > cap(result) {
+			newSlice := make([]SyncResourceInfo, cap(result)*2)
 			copy(newSlice, result)
 			result = newSlice
 		}
@@ -86,26 +85,26 @@ func (p *DebugSyncPlugin)BrowseFolder(folder string) (error, []SyncResourceInfo)
 	return nil, result[:nbEntries]
 }
 
-func (p *DebugSyncPlugin)HasFolder(folder string) bool{
+func (p *DebugSyncPlugin) HasFolder(folder string) bool {
 	splits := strings.Split(folder, "/")
 	res := p.storedStruct.GetPath(splits[1:]...)
 	return nil != res.MustMap()
 }
 
-func (p *DebugSyncPlugin)RemoveResource(r SyncResourceInfo) error{
+func (p *DebugSyncPlugin) RemoveResource(r SyncResourceInfo) error {
 	return nil
 }
 
-func (p *DebugSyncPlugin)AddResource(r *SyncResourceInfo) error{
+func (p *DebugSyncPlugin) AddResource(r *SyncResourceInfo) error {
 	fmt.Printf("Adding %s to path %s\n", r.Name, r.Parent)
 	j := p.storedStruct
 	splits := strings.Split(r.Parent, "/")
-	for _, path := range splits{
-		if path == ""{
+	for _, path := range splits {
+		if path == "" {
 			continue
 		}
 		temp, found := j.CheckGet(path)
-		if !found{
+		if !found {
 			return errors.New("Path doesn't exist")
 		}
 		j = temp
@@ -113,22 +112,22 @@ func (p *DebugSyncPlugin)AddResource(r *SyncResourceInfo) error{
 
 	/* We are converting the entry into a new object. Though we will loose the reference,
 	*  This will allow adding new entries to this folder.
-	*/
+	 */
 	//newJson := r
 
 	newEntry, err := json.Marshal(r)
-	if err != nil{
+	if err != nil {
 		return err
 	}
 	newJson, err := simplejson.NewJson(newEntry)
 
 	j.Set(r.Name, *newJson)
-	if err != nil{
+	if err != nil {
 		fmt.Println("Couldn't call the Map")
 		return err
 	}
 	res, err := p.storedStruct.MarshalJSONIndent("", "  ")
-	if err != nil{
+	if err != nil {
 		return err
 	}
 	ioutil.WriteFile(p.file, res, 777)

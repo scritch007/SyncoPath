@@ -2,9 +2,9 @@ package main
 
 import (
 	//"io/ioutil"
-	"os"
-	"fmt"
 	"flag"
+	"fmt"
+	"os"
 )
 
 func main() {
@@ -20,13 +20,13 @@ func main() {
 	flag.StringVar(&picasa, "picasa", "", "Use picasa as destination")
 	flag.StringVar(&picasa, "p", "", "Use picasa as destination")
 
-	flag.Usage = func(){
+	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "Mandatory argument:\n  sync_folder\n")
 	}
 	flag.Parse()
-	if 1 != flag.NArg(){
+	if 1 != flag.NArg() {
 		flag.Usage()
 		os.Exit(0)
 	}
@@ -43,10 +43,10 @@ func main() {
 	var err error
 	if debug != "" {
 		syncPlugin, err = NewDebugSyncPlugin(debug)
-	}else if(picasa != ""){
+	} else if picasa != "" {
 		syncPlugin, err = NewPicasaSyncPlugin(picasa)
 	}
-	if nil != err{
+	if nil != err {
 		fmt.Println("Failed to instantiate plugin with error ", err)
 		os.Exit(1)
 	}
