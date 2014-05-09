@@ -8,11 +8,13 @@ import (
 	"io/ioutil"
 	"os"
 	"strings"
+	"sync"
 )
 
 type DebugSyncPlugin struct {
 	file         string
 	storedStruct *simplejson.Json
+	lock         sync.Mutex
 }
 
 func NewDebugSyncPlugin(f string) (*DebugSyncPlugin, error) {
@@ -45,7 +47,19 @@ func (p *DebugSyncPlugin) Name() string {
 	return "DebugSyncPlugin"
 }
 
+func (p *DebugSyncPlugin) Lock() {
+	DEBUG.Println("Locking")
+	p.lock.Lock()
+}
+
+func (p *DebugSyncPlugin) Unlock() {
+	p.lock.Unlock()
+	DEBUG.Println("Unlocked")
+}
+
 func (p *DebugSyncPlugin) BrowseFolder(folder string) (error, []SyncResourceInfo) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
 
 	var jsonFolder *simplejson.Json
 	if folder == "/" {
@@ -60,6 +74,7 @@ func (p *DebugSyncPlugin) BrowseFolder(folder string) (error, []SyncResourceInfo
 
 	entries, err := jsonFolder.Map()
 	if nil != err {
+		DEBUG.Println(*jsonFolder, folder)
 		return errors.New("Wrong type"), nil
 	}
 	var nbEntries = 0
@@ -86,6 +101,8 @@ func (p *DebugSyncPlugin) BrowseFolder(folder string) (error, []SyncResourceInfo
 }
 
 func (p *DebugSyncPlugin) HasFolder(folder string) bool {
+	p.lock.Lock()
+	defer p.lock.Unlock()
 	splits := strings.Split(folder, "/")
 	res := p.storedStruct.GetPath(splits[1:]...)
 	return nil != res.MustMap()
@@ -96,7 +113,10 @@ func (p *DebugSyncPlugin) RemoveResource(r SyncResourceInfo) error {
 }
 
 func (p *DebugSyncPlugin) AddResource(r *SyncResourceInfo) error {
-	fmt.Printf("Adding %s to path %s\n", r.Name, r.Parent)
+	DEBUG.Printf("Adding %s to path %s\n", r.Name, r.Parent)
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
 	j := p.storedStruct
 	splits := strings.Split(r.Parent, "/")
 	for _, path := range splits {
@@ -110,11 +130,6 @@ func (p *DebugSyncPlugin) AddResource(r *SyncResourceInfo) error {
 		j = temp
 	}
 
-	/* We are converting the entry into a new object. Though we will loose the reference,
-	*  This will allow adding new entries to this folder.
-	 */
-	//newJson := r
-
 	newEntry, err := json.Marshal(r)
 	if err != nil {
 		return err
@@ -126,7 +141,7 @@ func (p *DebugSyncPlugin) AddResource(r *SyncResourceInfo) error {
 		fmt.Println("Couldn't call the Map")
 		return err
 	}
-	res, err := p.storedStruct.MarshalJSONIndent("", "  ")
+	res, err := p.storedStruct.EncodeIndent("", "  ")
 	if err != nil {
 		return err
 	}

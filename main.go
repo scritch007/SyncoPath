@@ -1,9 +1,10 @@
 package main
 
 import (
-	//"io/ioutil"
 	"flag"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"os"
 )
 
@@ -11,7 +12,13 @@ func main() {
 	var help = false
 	var configFile = ".config"
 	var debug string
+	var verbose bool
+	var verboseTooltip = "Enable the debug mode"
 	flag.BoolVar(&help, "help", false, "Display Help")
+
+	flag.BoolVar(&verbose, "verbose", false, verboseTooltip)
+	flag.BoolVar(&verbose, "v", false, verboseTooltip)
+
 	flag.StringVar(&configFile, "config", ".config", "Configuration file to use")
 	flag.StringVar(&debug, "debug", "", "Use the debug mode")
 	flag.StringVar(&debug, "d", "", "Use the debug mode")
@@ -50,6 +57,15 @@ func main() {
 		fmt.Println("Failed to instantiate plugin with error ", err)
 		os.Exit(1)
 	}
+
+	var debugIO io.Writer
+	if verbose {
+		debugIO = os.Stdout
+	} else {
+		debugIO = ioutil.Discard
+	}
+
+	LogInit(debugIO, os.Stdout, os.Stdout, os.Stderr)
 
 	var syncer = NewSyncer(local_folder)
 	syncer.Sync(syncPlugin)
