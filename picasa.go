@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	//"net/http/httputil"
 )
 
@@ -51,6 +52,7 @@ type PicasaSyncPlugin struct {
 	authStruct         picasaAuthStruct
 	initializationDone bool
 	resp               *PicasaMainResponse
+	lock 			   sync.Mutex
 }
 
 func NewPicasaSyncPlugin(configFile string) (*PicasaSyncPlugin, error) {
@@ -98,6 +100,17 @@ func (p *PicasaSyncPlugin) Name() string {
 	return "Picasa"
 }
 
+
+func (p *PicasaSyncPlugin) Lock() {
+	DEBUG.Println("Locking")
+	p.lock.Lock()
+}
+
+func (p *PicasaSyncPlugin) Unlock() {
+	p.lock.Unlock()
+	DEBUG.Println("Unlocked")
+}
+
 func (p *PicasaSyncPlugin) browseAlbum(url string) (error, *PicasaMainResponse) {
 	t := &oauth.Transport{Config: oauthCfg}
 	t.Token = &oauth.Token{AccessToken: p.authStruct.AccessToken, RefreshToken: p.authStruct.RefreshToken}
@@ -119,6 +132,7 @@ func (p *PicasaSyncPlugin) browseAlbum(url string) (error, *PicasaMainResponse) 
 func (p *PicasaSyncPlugin) BrowseFolder(f string) (error, []SyncResourceInfo) {
 	var parsedResp *PicasaMainResponse
 	var url string
+	p.Lock()
 	if !p.initializationDone {
 		url = albumFeedURL + "?alt=json"
 		err, parsedResp := p.browseAlbum(url)
@@ -127,6 +141,8 @@ func (p *PicasaSyncPlugin) BrowseFolder(f string) (error, []SyncResourceInfo) {
 		}
 		p.resp = parsedResp
 	}
+	p.Unlock()
+
 	if f == "" {
 		return nil, make([]SyncResourceInfo, 0)
 	}
@@ -337,6 +353,8 @@ func (p *PicasaSyncPlugin) buildFolderName(folder string) string {
 
 //Check if the album name is in our list
 func (p *PicasaSyncPlugin) getFolder(album_name string) *PicasaEntry {
+	p.Lock()
+	defer p.Unlock()
 	for _, album := range p.resp.Feed.Entries {
 		//fmt.Printf("\n@@@@@@@@@@@@@@@@@@@@@@\n%s vs %s\n@@@@@@@@@@@@@@@@@@@@@@@@@@\n", album.Title.Value, album_name)
 		if album.Title.Value == album_name {
