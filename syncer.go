@@ -162,12 +162,8 @@ func syncWorker(syncer SyncPlugin, jobChan <-chan BrowseEntry, newJobChan chan<-
 			extensionSplit := strings.Split(file.Name(), ".")
 			extension := extensionSplit[len(extensionSplit)-1]
 			//Extension needs to have the . otherwise it will fail
-			mimeType := mime.TypeByExtension("." + extension)
-			if !(strings.HasPrefix(mimeType, "image") || strings.HasPrefix(mimeType, "video")) {
-				INFO.Printf("Found %s that can't be uploaded", file.Name())
-				continue
-			}
-			var entry = SyncResourceInfo{Name: file.Name(), Parent: folder, IsDir: file.IsDir(), Path: path.Join(real_path, file.Name()), MimeType: mimeType}
+
+			var entry = SyncResourceInfo{Name: file.Name(), Parent: folder, IsDir: file.IsDir(), Path: path.Join(real_path, file.Name())}
 			if entry.IsDir {
 				//Entry is a directory, create the directory remotely
 				folder_path := entry.Parent
@@ -188,6 +184,12 @@ func syncWorker(syncer SyncPlugin, jobChan <-chan BrowseEntry, newJobChan chan<-
 				//Send message that a new folder has been encountered
 				newJobChan <- browseEntry
 			} else {
+				mimeType := mime.TypeByExtension("." + extension)
+				if !(strings.HasPrefix(mimeType, "image") || strings.HasPrefix(mimeType, "video")) {
+					INFO.Printf("Found %s that can't be uploaded", file.Name())
+					continue
+				}
+				entry.MimeType = mimeType
 				var found = false
 				for _, existing_entry := range entries {
 					//fmt.Printf("Comparing %s with %s \n", existing_entry.Name, entry.Name)
