@@ -2,76 +2,71 @@ package main
 
 import (
 	"bytes"
-	"code.google.com/p/goauth2/oauth"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
 	"github.com/scritch007/go-simplejson"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
 	//"net/http/httputil"
 )
 
-var oauthCfg = &oauth.Config{
+var oauthCfg = &oauth2.Config{
 	//TODO: put your project's Client Id here.  To be got from https://code.google.com/apis/console
-	ClientId: "106373453700-1rbn7j3e4ddvs68lmv7346evp3uif6i9.apps.googleusercontent.com",
+	ClientID: "106373453700-1rbn7j3e4ddvs68lmv7346evp3uif6i9.apps.googleusercontent.com",
 
 	//TODO: put your project's Client Secret value here https://code.google.com/apis/console
 	ClientSecret: "1xb5Q4FWDTMxoHBovwPXfWzm",
 
-	//For Google's oauth2 authentication, use this defined URL
-	AuthURL: "https://accounts.google.com/o/oauth2/auth",
-
-	//For Google's oauth2 authentication, use this defined URL
-	TokenURL: "https://accounts.google.com/o/oauth2/token",
+	Endpoint: google.Endpoint,
 
 	//To return your oauth2 code, Google will redirect the browser to this page that you have defined
 	//TODO: This exact URL should also be added in your Google API console for this project within "API Access"->"Redirect URIs"
 	RedirectURL: "urn:ietf:wg:oauth:2.0:oob",
 
 	//This is the 'scope' of the data that you are asking the user's permission to access. For getting user's info, this is the url that Google has defined.
-	Scope: "https://www.googleapis.com/auth/userinfo.profile https://picasaweb.google.com/data/",
+	Scopes: []string{
+		"https://www.googleapis.com/auth/userinfo.profile",
+		"https://picasaweb.google.com/data/",
+	},
 }
 
 const albumFeedURL = "https://picasaweb.google.com/data/feed/api/user/default"
 
-type picasaAuthStruct struct {
-	AccessToken  string
-	RefreshToken string
-}
 type PicasaSyncPlugin struct {
 	configFile         string
-	authStruct         picasaAuthStruct
+	authStruct         oauth2.Token
 	initializationDone bool
 	resp               *PicasaMainResponse
-	lock 			   sync.Mutex
+	lock               sync.Mutex
 }
 
 func NewPicasaSyncPlugin(configFile string) (*PicasaSyncPlugin, error) {
 
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
 		//Now ask the user to go to the correct place
-		fmt.Print("Please got to the following url https://accounts.google.com/o/oauth2/auth?scope=", url.QueryEscape(oauthCfg.Scope), "&redirect_uri=", oauthCfg.RedirectURL, "&response_type=code&client_id=", oauthCfg.ClientId, "\n")
+		fmt.Print("Please got to the following url ", oauthCfg.AuthCodeURL("state"), "\n")
 		fmt.Print("Enter the code displayed on the website:\n")
 		var code string
 		_, _ = fmt.Scanln(&code)
 		fmt.Print("You just entered ", code)
-		t := &oauth.Transport{Config: oauthCfg}
-		// Exchange the received code for a token
-		token, err := t.Exchange(code)
+		tok, err := oauthCfg.Exchange(oauth2.NoContext, code)
+
 		if err != nil {
 			return nil, errors.New("Couldn't get credentials" + err.Error())
 		}
-		res, _ := json.Marshal(token)
+		res, _ := json.Marshal(tok)
 		ioutil.WriteFile(configFile, res, 777)
+
 	}
 	file, err := ioutil.ReadFile(configFile)
 	if err != nil {
@@ -83,23 +78,15 @@ func NewPicasaSyncPlugin(configFile string) (*PicasaSyncPlugin, error) {
 	p.configFile = configFile
 	p.authStruct.AccessToken = token.Get("AccessToken").MustString()
 	p.authStruct.RefreshToken = token.Get("RefreshToken").MustString()
+	p.authStruct.TokenType = token.Get("TokenType").MustString()
 	p.initializationDone = false
 
-	t := &oauth.Transport{Config: oauthCfg}
-	t.Token = &oauth.Token{AccessToken: p.authStruct.AccessToken, RefreshToken: p.authStruct.RefreshToken}
-	err = t.Refresh()
-	p.authStruct.AccessToken = t.Token.AccessToken
-	p.authStruct.RefreshToken = t.Token.RefreshToken
-	if err != nil {
-		return nil, err
-	}
 	return p, nil
 }
 
 func (p *PicasaSyncPlugin) Name() string {
 	return "Picasa"
 }
-
 
 func (p *PicasaSyncPlugin) Lock() {
 	DEBUG.Println("Locking")
@@ -112,9 +99,8 @@ func (p *PicasaSyncPlugin) Unlock() {
 }
 
 func (p *PicasaSyncPlugin) browseAlbum(url string) (error, *PicasaMainResponse) {
-	t := &oauth.Transport{Config: oauthCfg}
-	t.Token = &oauth.Token{AccessToken: p.authStruct.AccessToken, RefreshToken: p.authStruct.RefreshToken}
-	resp, err := t.Client().Get(url)
+	client := oauthCfg.Client(oauth2.NoContext, &p.authStruct)
+	resp, err := client.Get(url)
 	if err != nil {
 		return err, nil
 	}
@@ -210,9 +196,9 @@ func (p *PicasaSyncPlugin) createAlbum(albumName string) error {
 	album.Title = albumName
 	output, _ := xml.MarshalIndent(&album, "  ", "    ")
 	//TODO Make the call to the Google API...
-	t := &oauth.Transport{Config: oauthCfg}
-	t.Token = &oauth.Token{AccessToken: p.authStruct.AccessToken, RefreshToken: p.authStruct.RefreshToken}
-	resp, err := t.Client().Post("https://picasaweb.google.com/data/feed/api/user/default?alt=json", "application/atom+xml", bytes.NewReader(output))
+
+	client := oauthCfg.Client(oauth2.NoContext, &p.authStruct)
+	resp, err := client.Post("https://picasaweb.google.com/data/feed/api/user/default?alt=json", "application/atom+xml", bytes.NewReader(output))
 	if nil != err {
 		fmt.Println("Failed to create folder with error ", err)
 		buf, _ := ioutil.ReadAll(resp.Body)
@@ -267,8 +253,7 @@ func (p *PicasaSyncPlugin) uploadPhoto(in_album *PicasaEntry, r *SyncResourceInf
 	/* Close the body and send the request */
 	body_writer.Close()
 
-	t := &oauth.Transport{Config: oauthCfg}
-	t.Token = &oauth.Token{AccessToken: p.authStruct.AccessToken, RefreshToken: p.authStruct.RefreshToken}
+	client := oauthCfg.Client(oauth2.NoContext, &p.authStruct)
 
 	request_body, err := ioutil.ReadAll(body_buf)
 	//DO call
@@ -284,7 +269,7 @@ func (p *PicasaSyncPlugin) uploadPhoto(in_album *PicasaEntry, r *SyncResourceInf
 	//fmt.Println(string(dump))
 
 	//resp, err := t.Client().Post(uri, content_type, body_buf)
-	resp, err := t.Client().Do(request)
+	resp, err := client.Do(request)
 	if nil != err {
 		if nil != resp {
 			body, _ := ioutil.ReadAll(resp.Body)
