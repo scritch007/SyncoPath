@@ -17,6 +17,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 	//"net/http/httputil"
 )
 
@@ -44,10 +45,10 @@ const albumFeedURL = "https://picasaweb.google.com/data/feed/api/user/default"
 
 type PicasaSyncPlugin struct {
 	configFile         string
-	authStruct         oauth2.Token
 	initializationDone bool
 	resp               *PicasaMainResponse
 	lock               sync.Mutex
+	AuthStruct         oauth2.Token
 }
 
 func NewPicasaSyncPlugin(configFile string) (*PicasaSyncPlugin, error) {
@@ -64,7 +65,7 @@ func NewPicasaSyncPlugin(configFile string) (*PicasaSyncPlugin, error) {
 		if err != nil {
 			return nil, errors.New("Couldn't get credentials" + err.Error())
 		}
-		res, _ := json.Marshal(tok)
+		res, _ := json.Marshal(PicasaSyncPlugin{AuthStruct: *tok})
 		ioutil.WriteFile(configFile, res, 777)
 
 	}
@@ -76,9 +77,12 @@ func NewPicasaSyncPlugin(configFile string) (*PicasaSyncPlugin, error) {
 	token, err := simplejson.NewJson(file)
 	p := new(PicasaSyncPlugin)
 	p.configFile = configFile
-	p.authStruct.AccessToken = token.Get("AccessToken").MustString()
-	p.authStruct.RefreshToken = token.Get("RefreshToken").MustString()
-	p.authStruct.TokenType = token.Get("TokenType").MustString()
+	fmt.Println(token.Get("AuthStruct").Get("access_token").MustString())
+	p.AuthStruct.AccessToken = token.Get("AuthStruct").Get("access_token").MustString()
+	p.AuthStruct.RefreshToken = token.Get("AuthStruct").Get("refresh_token").MustString()
+	p.AuthStruct.TokenType = token.Get("AuthStruct").Get("token_type").MustString()
+	//Force refresh token now
+	p.AuthStruct.Expiry = time.Now()
 	p.initializationDone = false
 
 	return p, nil
@@ -99,8 +103,9 @@ func (p *PicasaSyncPlugin) Unlock() {
 }
 
 func (p *PicasaSyncPlugin) browseAlbum(url string) (error, *PicasaMainResponse) {
-	client := oauthCfg.Client(oauth2.NoContext, &p.authStruct)
+	client := oauthCfg.Client(oauth2.NoContext, &p.AuthStruct)
 	resp, err := client.Get(url)
+	DEBUG.Printf("Accessing this URL %s\n", url)
 	if err != nil {
 		return err, nil
 	}
@@ -108,6 +113,7 @@ func (p *PicasaSyncPlugin) browseAlbum(url string) (error, *PicasaMainResponse) 
 	if err != nil {
 		return err, nil
 	}
+	DEBUG.Printf("Received %s\n", buf)
 	parsedResp, _ := PicasaParse(buf)
 	if err != nil {
 		return err, nil
@@ -197,15 +203,15 @@ func (p *PicasaSyncPlugin) createAlbum(albumName string) error {
 	output, _ := xml.MarshalIndent(&album, "  ", "    ")
 	//TODO Make the call to the Google API...
 
-	client := oauthCfg.Client(oauth2.NoContext, &p.authStruct)
+	client := oauthCfg.Client(oauth2.NoContext, &p.AuthStruct)
 	resp, err := client.Post("https://picasaweb.google.com/data/feed/api/user/default?alt=json", "application/atom+xml", bytes.NewReader(output))
 	if nil != err {
-		fmt.Println("Failed to create folder with error ", err)
+		ERROR.Println("Failed to create folder with error ", err)
 		buf, _ := ioutil.ReadAll(resp.Body)
-		fmt.Println("Got this ", string(buf))
+		ERROR.Println("Got this ", string(buf))
 	} else {
 		buf, _ := ioutil.ReadAll(resp.Body)
-		fmt.Println("Got this ", string(buf))
+		DEBUG.Println("Got this ", string(buf))
 	}
 	return nil
 }
@@ -253,7 +259,7 @@ func (p *PicasaSyncPlugin) uploadPhoto(in_album *PicasaEntry, r *SyncResourceInf
 	/* Close the body and send the request */
 	body_writer.Close()
 
-	client := oauthCfg.Client(oauth2.NoContext, &p.authStruct)
+	client := oauthCfg.Client(oauth2.NoContext, &p.AuthStruct)
 
 	request_body, err := ioutil.ReadAll(body_buf)
 	//DO call
@@ -273,7 +279,7 @@ func (p *PicasaSyncPlugin) uploadPhoto(in_album *PicasaEntry, r *SyncResourceInf
 	if nil != err {
 		if nil != resp {
 			body, _ := ioutil.ReadAll(resp.Body)
-			fmt.Println(body)
+			DEBUG.Println(body)
 		}
 		panic(err.Error())
 	}
@@ -281,17 +287,15 @@ func (p *PicasaSyncPlugin) uploadPhoto(in_album *PicasaEntry, r *SyncResourceInf
 	/* Handle the response */
 	defer resp.Body.Close()
 	body, _ := ioutil.ReadAll(resp.Body)
-	fmt.Println("I did manage to send something, but it was too fast for sure")
-	fmt.Println("Whouch got and error but nothing printed", err, string(body))
 	if nil != err {
-		fmt.Println("Whouch got and error but nothing printed", err, string(body))
+		ERROR.Println("Whouch got and error but nothing printed", err, string(body))
 		return err
 	}
 	return nil
 }
 
 func (p *PicasaSyncPlugin) AddResource(r *SyncResourceInfo) error {
-	fmt.Println("Adding new resource ", r.Name)
+	DEBUG.Printf("Adding new resource %s\n", r.Name)
 	if r.IsDir {
 		//We need to create the new repository
 		var folder_name string
@@ -351,6 +355,13 @@ func (p *PicasaSyncPlugin) getFolder(album_name string) *PicasaEntry {
 
 func (p *PicasaSyncPlugin) HasFolder(folder string) bool {
 	//Since Picasa doesn't handle "Sub Folder" construction, we'll use some rewriting name
+	if !p.initializationDone {
+		err, _ := p.BrowseFolder(folder)
+		if nil != err {
+			ERROR.Printf("Failed to browse for initialisation with error %s\n", err.Error())
+			return false
+		}
+	}
 	folder_name := p.buildFolderName(folder)
 	return nil != p.getFolder(folder_name)
 }
