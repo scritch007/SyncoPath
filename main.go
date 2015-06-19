@@ -10,7 +10,6 @@ import (
 
 func main() {
 	var help = false
-	var configFile = ".config"
 	var debug string
 	var verbose bool
 	var verboseTooltip = "Enable the debug mode"
@@ -19,12 +18,11 @@ func main() {
 	flag.BoolVar(&verbose, "verbose", false, verboseTooltip)
 	flag.BoolVar(&verbose, "v", false, verboseTooltip)
 
-	flag.StringVar(&configFile, "config", ".config", "Configuration file to use")
 	flag.StringVar(&debug, "debug", "", "Use the debug mode")
 	flag.StringVar(&debug, "d", "", "Use the debug mode")
 
 	var picasa string
-	flag.StringVar(&picasa, "picasa", "", "Use picasa as destination")
+	flag.StringVar(&picasa, "picasa", "", "picasa plugin configuration path")
 	flag.StringVar(&picasa, "p", "", "Use picasa as destination")
 
 	flag.Usage = func() {
@@ -52,6 +50,9 @@ func main() {
 		syncPlugin, err = NewDebugSyncPlugin(debug)
 	} else if picasa != "" {
 		syncPlugin, err = NewPicasaSyncPlugin(picasa)
+	} else {
+		fmt.Println("What you didn't provide any backend")
+		os.Exit(1)
 	}
 	if nil != err {
 		fmt.Println("Failed to instantiate plugin with error ", err)
