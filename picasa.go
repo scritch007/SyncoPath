@@ -44,16 +44,15 @@ var oauthCfg = &oauth2.Config{
 const albumFeedURL = "https://picasaweb.google.com/data/feed/api/user/default"
 
 type PicasaSyncPlugin struct {
-	configFile         string
 	initializationDone bool
 	resp               *PicasaMainResponse
 	lock               sync.Mutex
 	AuthStruct         oauth2.Token
 }
 
-func NewPicasaSyncPlugin(configFile string) (*PicasaSyncPlugin, error) {
+func NewPicasaSyncPlugin(config string) (*PicasaSyncPlugin, error) {
 
-	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+	if 0 == len(config) {
 		//Now ask the user to go to the correct place
 		fmt.Print("Please got to the following url ", oauthCfg.AuthCodeURL("state"), "\n")
 		fmt.Print("Enter the code displayed on the website:\n")
@@ -65,18 +64,16 @@ func NewPicasaSyncPlugin(configFile string) (*PicasaSyncPlugin, error) {
 		if err != nil {
 			return nil, errors.New("Couldn't get credentials" + err.Error())
 		}
-		res, _ := json.Marshal(PicasaSyncPlugin{AuthStruct: *tok})
-		ioutil.WriteFile(configFile, res, 777)
-
+		tmp, _ := json.Marshal(PicasaSyncPlugin{AuthStruct: *tok})
+		config = string(tmp)
 	}
-	file, err := ioutil.ReadFile(configFile)
-	if err != nil {
-		fmt.Printf("File error: %v\n", err)
+
+	token, err := simplejson.NewJson([]byte(config))
+	if nil != err {
 		return nil, err
 	}
-	token, err := simplejson.NewJson(file)
 	p := new(PicasaSyncPlugin)
-	p.configFile = configFile
+
 	fmt.Println(token.Get("AuthStruct").Get("access_token").MustString())
 	p.AuthStruct.AccessToken = token.Get("AuthStruct").Get("access_token").MustString()
 	p.AuthStruct.RefreshToken = token.Get("AuthStruct").Get("refresh_token").MustString()
@@ -126,7 +123,7 @@ func (p *PicasaSyncPlugin) BrowseFolder(f string) (error, []SyncResourceInfo) {
 	var url string
 	p.Lock()
 	if !p.initializationDone {
-		url = albumFeedURL + "?alt=json"
+		url = albumFeedURL + "?alt=json&imgmax=d"
 		err, parsedResp := p.browseAlbum(url)
 		if err != nil {
 			return err, nil
@@ -145,7 +142,7 @@ func (p *PicasaSyncPlugin) BrowseFolder(f string) (error, []SyncResourceInfo) {
 		return nil, make([]SyncResourceInfo, 0)
 	}
 
-	url = albumFeedURL + "/albumid/" + album.Id.Value + "?alt=json&kind=photo"
+	url = albumFeedURL + "/albumid/" + album.Id.Value + "?alt=json&kind=photo&imgmax=d"
 	err, parsedResp := p.browseAlbum(url)
 	if err != nil {
 		return err, nil
@@ -162,6 +159,10 @@ func (p *PicasaSyncPlugin) BrowseFolder(f string) (error, []SyncResourceInfo) {
 }
 func (p *PicasaSyncPlugin) RemoveResource(r SyncResourceInfo) error {
 	return errors.New("Not available")
+}
+
+func (p *PicasaSyncPlugin) DownloadResource(r *SyncResourceInfo) error {
+	return nil
 }
 
 type Category struct {
@@ -364,4 +365,8 @@ func (p *PicasaSyncPlugin) HasFolder(folder string) bool {
 	}
 	folder_name := p.buildFolderName(folder)
 	return nil != p.getFolder(folder_name)
+}
+
+func (p *PicasaSyncPlugin) GetResourceInfo(folder string) (error, SyncResourceInfo) {
+	return nil, SyncResourceInfo{}
 }

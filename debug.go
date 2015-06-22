@@ -12,25 +12,29 @@ import (
 )
 
 type DebugSyncPlugin struct {
-	file         string
+	File         string
 	storedStruct *simplejson.Json
 	lock         sync.Mutex
 }
 
 func NewDebugSyncPlugin(f string) (*DebugSyncPlugin, error) {
 	var a = new(DebugSyncPlugin)
-	a.file = f
-	if _, err := os.Stat(a.file); os.IsNotExist(err) {
-		f, err := os.Create(a.file)
+	if 0 == len(f) {
+		fmt.Println("Please provide path to debug file")
+		fmt.Scanln(&f)
+	}
+	a.File = f
+	if _, err := os.Stat(a.File); os.IsNotExist(err) {
+		f, err := os.Create(a.File)
 		if err != nil {
 			return nil, err
 		}
 		f.Close()
 		j, err := simplejson.NewJson([]byte("{}"))
 		res, _ := j.Encode()
-		ioutil.WriteFile(a.file, res, 777)
+		ioutil.WriteFile(a.File, res, 777)
 	}
-	file, err := ioutil.ReadFile(a.file)
+	file, err := ioutil.ReadFile(a.File)
 	if err != nil {
 		fmt.Printf("File error: %v\n", err)
 		return nil, err
@@ -111,6 +115,9 @@ func (p *DebugSyncPlugin) HasFolder(folder string) bool {
 func (p *DebugSyncPlugin) RemoveResource(r SyncResourceInfo) error {
 	return nil
 }
+func (p *DebugSyncPlugin) DownloadResource(r *SyncResourceInfo) error {
+	return nil
+}
 
 func (p *DebugSyncPlugin) AddResource(r *SyncResourceInfo) error {
 	DEBUG.Printf("Adding %s to path %s\n", r.Name, r.Parent)
@@ -145,6 +152,10 @@ func (p *DebugSyncPlugin) AddResource(r *SyncResourceInfo) error {
 	if err != nil {
 		return err
 	}
-	ioutil.WriteFile(p.file, res, 777)
+	ioutil.WriteFile(p.File, res, 777)
 	return nil
+}
+
+func (p *DebugSyncPlugin) GetResourceInfo(folder string) (error, SyncResourceInfo) {
+	return nil, SyncResourceInfo{}
 }
