@@ -100,6 +100,14 @@ func main() {
 		os.Exit(0)
 	}
 
+	var debugIO io.Writer
+	if verbose {
+		debugIO = os.Stdout
+	} else {
+		debugIO = ioutil.Discard
+	}
+	LogInit(debugIO, os.Stdout, os.Stdout, os.Stderr)
+
 	//Now read stuff...
 	if _, err := os.Stat(config); os.IsNotExist(err) {
 		res, err = configure()
@@ -142,14 +150,6 @@ func main() {
 		os.Exit(0)
 	}
 
-	var debugIO io.Writer
-	if verbose {
-		debugIO = os.Stdout
-	} else {
-		debugIO = ioutil.Discard
-	}
-
-	LogInit(debugIO, os.Stdout, os.Stdout, os.Stderr)
 	var syncer = NewSyncer()
 	syncer.Sync(res[0].Syncer, res[1].Syncer)
 

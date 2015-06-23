@@ -28,8 +28,10 @@ func NewLocalSyncPlugin(config string) (*LocalSyncPlugin, error) {
 		if nil != err {
 			return nil, err
 		}
-		l.Chroot = token.Get("Chroot").MustString()
+		tmp := token.Get("Chroot").MustString()
+		l.Chroot = tmp
 	}
+	DEBUG.Printf("Local plugin chroot is %s", l.Chroot)
 
 	return l, nil
 }
@@ -37,6 +39,8 @@ func NewLocalSyncPlugin(config string) (*LocalSyncPlugin, error) {
 func (l *LocalSyncPlugin) BrowseFolder(f string) (error, []SyncResourceInfo) {
 	real_path := filepath.Join(l.Chroot, f)
 	fileList, err := ioutil.ReadDir(real_path)
+
+	DEBUG.Printf("Browsing %s which is actually %s", f, real_path)
 
 	if nil != err {
 		return err, nil
@@ -80,10 +84,27 @@ func copyFileContents(src, dst string) (err error) {
 
 func (l *LocalSyncPlugin) AddResource(r *SyncResourceInfo) error {
 	rPath := filepath.Join(l.Chroot, r.Parent, r.Name)
-	return copyFileContents(r.Path, rPath)
+	if r.IsDir {
+		err := os.Mkdir(rPath, os.ModePerm)
+		if nil != err {
+			return nil
+		} else if os.IsExist(err) {
+			return nil
+		} else {
+			return err
+		}
+	} else {
+		return copyFileContents(r.Path, rPath)
+	}
 }
-func (l *LocalSyncPlugin) HasFolder(folder string) bool {
-	if _, err := os.Stat(filepath.Join(l.Chroot, folder)); os.IsNotExist(err) {
+
+func (l *LocalSyncPlugin) realPath(f string) string {
+	return filepath.Join(l.Chroot, f)
+}
+
+func (l *LocalSyncPlugin) HasFolder(f string) bool {
+	DEBUG.Printf("Looking if %s exists. Real path is %s", f, l.realPath(f))
+	if _, err := os.Stat(l.realPath(f)); os.IsNotExist(err) {
 		return false
 	}
 	return true

@@ -2,24 +2,30 @@ package main
 
 import (
 	//	"io/ioutil"
+	"github.com/jmcvetta/randutil"
 	"mime"
 	"path"
 	"path/filepath"
 	"strings"
 	//	"math"
-	//"os"
+	"os"
 )
 
 type SyncResourceInfo struct {
-	Name     string
-	Path     string
-	Parent   string
-	IsDir    bool
-	MimeType string
+	Name      string
+	Path      string
+	Parent    string
+	IsDir     bool
+	MimeType  string
+	ExtraInfo string
 }
 
 func (s *SyncResourceInfo) GetPath() string {
-	return path.Join(s.Path, s.Name)
+	return path.Join(s.Parent, s.Name)
+}
+
+func (s *SyncResourceInfo) String() string {
+	return s.GetPath()
 }
 
 // SyncPlugin interface
@@ -54,6 +60,18 @@ func (s *Syncer) Sync(src, dst SyncPlugin) {
 	s.syncLocal(src, dst)
 }
 
+func (s *Syncer) AddNewJob(e *BrowseEntry) {
+	//We received a new job to do add it to the list
+	_, ok := s.browseEntryList[e.me.GetPath()]
+	if !ok {
+		INFO.Printf("Adding new job to list %s\n", e)
+		s.browseEntryList[e.me.GetPath()] = e
+	} else {
+		DEBUG.Printf("Job %s already in list of jobs to do\n", e)
+	}
+	DEBUG.Printf("===>%s\n", s.browseEntryList)
+}
+
 func (s *Syncer) syncLocal(src, dst SyncPlugin) {
 	err, fileList := src.BrowseFolder("/")
 	if nil != err {
@@ -71,8 +89,12 @@ func (s *Syncer) syncLocal(src, dst SyncPlugin) {
 	s.browseEntryList[main.GetPath()] = main_entry
 	for _, file := range fileList {
 		if file.IsDir {
-			entry := BrowseEntry{status: 0, me: &file, parent: main_entry}
-			s.browseEntryList[file.GetPath()] = &entry
+			var entry = new(BrowseEntry)
+			entry.status = 0
+			entry.me = new(SyncResourceInfo)
+			(*entry.me) = file
+			entry.parent = main_entry
+			s.AddNewJob(entry)
 		}
 	}
 	nbWorkers := 4
@@ -87,7 +109,7 @@ func (s *Syncer) syncLocal(src, dst SyncPlugin) {
 		if nil != entry {
 			//Set entry status to 1 for PENDING
 			entry.status = 1
-			INFO.Println("Pushing new job ", *entry)
+			INFO.Printf("Pushing new job %p %s\n", entry, entry)
 			jobChan <- entry
 			nbRunningJobs = nbRunningJobs + 1
 		}
@@ -96,15 +118,7 @@ func (s *Syncer) syncLocal(src, dst SyncPlugin) {
 		//Read the Job done channel
 		result := <-resultChan
 		if 0 == result.status {
-			//We received a new job to do add it to the list
-			_, ok := s.browseEntryList[result.me.GetPath()]
-			if !ok {
-				INFO.Println("Adding new job to list", result.me.GetPath())
-				s.browseEntryList[result.me.GetPath()] = result
-			} else {
-				DEBUG.Println("Job already in list of jobs to do")
-			}
-
+			s.AddNewJob(result)
 			continue
 		}
 		//This means the job was finished
@@ -114,8 +128,10 @@ func (s *Syncer) syncLocal(src, dst SyncPlugin) {
 		for {
 			pending, nextEntry := s.hasPendingJobs()
 			if nil != nextEntry && nbRunningJobs < nbWorkers {
+
+				INFO.Printf("Pushing new job %s\n", nextEntry)
 				nextEntry.status = 1
-				INFO.Println("Pushing new job ", *nextEntry)
+				DEBUG.Printf("%s\n", s.browseEntryList)
 				jobChan <- nextEntry
 				nbRunningJobs = nbRunningJobs + 1
 				continue
@@ -136,16 +152,22 @@ type BrowseEntry struct {
 	parent *BrowseEntry
 }
 
+func (b *BrowseEntry) String() string {
+	return b.me.String()
+}
+
 func (s *Syncer) hasPendingJobs() (pending bool, next *BrowseEntry) {
 	pending = false
 	for _, entry := range s.browseEntryList {
 		switch entry.status {
 		case 0:
 			//This entry is not being dealt with
-			if nil == entry.parent || 2 == entry.status {
+			if nil == entry.parent {
+				return true, entry
+			} else if 2 == entry.parent.status {
 				return true, entry
 			} else if 3 == entry.parent.status {
-
+				entry.status = 3
 			} else {
 				pending = true
 			}
@@ -169,13 +191,13 @@ func syncWorker(src, dst SyncPlugin, jobChan <-chan *BrowseEntry, newJobChan cha
 			//base := filepath.Base(folder)
 			//parent := filepath.Dir(folder)
 			//TODO create a temporary file for the download
-			err := src.DownloadResource(job.me)
-			if nil != err {
-				job.status = 3
-				newJobChan <- job
-				return
-			}
-			err = dst.AddResource(job.me)
+			//err := src.DownloadResource(job.me)
+			//if nil != err {
+			//	job.status = 3
+			//	newJobChan <- job
+			//	return
+			//}
+			err := dst.AddResource(job.me)
 			if nil != err {
 				ERROR.Print("Failed to add resource ", err)
 				job.status = 3
@@ -223,10 +245,11 @@ func syncWorker(src, dst SyncPlugin, jobChan <-chan *BrowseEntry, newJobChan cha
 					INFO.Printf("Folder already exists adding it to the list of sub folder to handle")
 				}
 				browseEntry := BrowseEntry{status: 0, me: &file, parent: job}
+				INFO.Printf("Pushing %s\n", browseEntry.me)
 				//Send message that a new folder has been encountered
 				newJobChan <- &browseEntry
 			} else {
-				mimeType := mime.TypeByExtension("." + extension)
+				mimeType := mime.TypeByExtension(extension)
 				if !(strings.HasPrefix(mimeType, "image") || strings.HasPrefix(mimeType, "video")) {
 					INFO.Printf("Found %s that can't be uploaded", file.Name)
 					continue
@@ -241,6 +264,9 @@ func syncWorker(src, dst SyncPlugin, jobChan <-chan *BrowseEntry, newJobChan cha
 				}
 				if !found {
 					//Download the file
+					rnd_name, _ := randutil.AlphaString(20)
+					tmp_filename := filepath.Join("/tmp", rnd_name)
+					file.Path = tmp_filename
 					err = src.DownloadResource(&file)
 					if nil != err {
 						ERROR.Printf("Failed to download resource %s\n", file.GetPath())
@@ -250,6 +276,9 @@ func syncWorker(src, dst SyncPlugin, jobChan <-chan *BrowseEntry, newJobChan cha
 					INFO.Printf("Adding new Resource %s\n", file.Name)
 					if err != nil {
 						ERROR.Println("Failed to add entry ", file.Name, " with error ", err)
+					}
+					if tmp_filename == file.Path {
+						os.Remove(tmp_filename)
 					}
 				} else {
 					INFO.Printf("%s already exists\n", file.Name)

@@ -147,22 +147,72 @@ func (p *PicasaSyncPlugin) BrowseFolder(f string) (error, []SyncResourceInfo) {
 	if err != nil {
 		return err, nil
 	}
-	var result = make([]SyncResourceInfo, len(parsedResp.Feed.Entries))
+
+	result_size := len(parsedResp.Feed.Entries)
+	if "/" == f {
+		//Special case we need to return both the images and the albums
+		result_size += len(p.resp.Feed.Entries)
+	}
+
+	var result = make([]SyncResourceInfo, result_size)
 
 	for i, album := range parsedResp.Feed.Entries {
-		//alb := chromecasa.Folder{Name:album.Name.Value, Id:album.Id.Value, Icon: album.Media.Icon[0].Url, Display: true, Browse: false}
 		name := album.Title.Value
-		result[i] = SyncResourceInfo{Name: name, Path: album.Id.Value, Parent: f, IsDir: true}
+		result[i] = SyncResourceInfo{Name: name, Path: album.Id.Value, Parent: f}
+		if album.Category[0].Term == "http://schemas.google.com/photos/2007#photo" {
+			result[i].IsDir = false
+			result[i].ExtraInfo = album.Media.Content[0].Url
+			INFO.Printf("YESS!!! %s => %s\n", name, result[i].ExtraInfo)
+		} else {
+			result[i].IsDir = true
+		}
 	}
+	if "/" == f {
+		for i, album := range p.resp.Feed.Entries {
+			name := album.Title.Value
+			result[i+len(parsedResp.Feed.Entries)] = SyncResourceInfo{Name: name, Path: album.Id.Value, Parent: f, IsDir: true}
+		}
+	}
+	INFO.Printf("%s", result)
 	return nil, result
 
 }
+
 func (p *PicasaSyncPlugin) RemoveResource(r SyncResourceInfo) error {
 	return errors.New("Not available")
 }
 
-func (p *PicasaSyncPlugin) DownloadResource(r *SyncResourceInfo) error {
+func downloadFromUrl(url, path string) error {
+	INFO.Println("Downloading", url, "to", path)
+
+	// TODO: check file existence first with io.IsExist
+	output, err := os.Create(path)
+	if err != nil {
+		ERROR.Println("Error while creating", path, "-", err)
+		return err
+	}
+	defer output.Close()
+
+	response, err := http.Get(url)
+	if err != nil {
+		ERROR.Println("Error while downloading", url, "-", err)
+		return err
+	}
+	defer response.Body.Close()
+
+	n, err := io.Copy(output, response.Body)
+	if err != nil {
+		ERROR.Println("Error while downloading", url, "-", err)
+		return err
+	}
+
+	DEBUG.Println(n, "bytes downloaded.")
 	return nil
+}
+
+func (p *PicasaSyncPlugin) DownloadResource(r *SyncResourceInfo) error {
+	INFO.Printf("Now downloading %s", r)
+	return downloadFromUrl(r.ExtraInfo, r.Path)
 }
 
 type Category struct {
@@ -243,7 +293,7 @@ func (p *PicasaSyncPlugin) uploadPhoto(in_album *PicasaEntry, r *SyncResourceInf
 
 	mh2 := make(textproto.MIMEHeader)
 	mh2.Set("Content-Type", r.MimeType)
-	//TODO open the file
+	//open the file
 	file, err := os.Open(r.Path)
 	if err != nil {
 		return errors.New("Couldn't read file from the filesystem")
