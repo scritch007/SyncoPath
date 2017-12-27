@@ -5,47 +5,48 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/scritch007/go-simplejson"
 	"io"
 	"io/ioutil"
 	"os"
+
+	"github.com/scritch007/go-simplejson"
 )
 
-type ConfigSync struct {
+type configSync struct {
 	Name   string
 	Syncer SyncPlugin
 }
 
-func instantiatePlugin(name, config string) (*ConfigSync, error) {
+func instantiatePlugin(name, config string) (*configSync, error) {
 	if name == "picasa" {
 		fmt.Println("You selected picasa")
 		plugin, err := NewPicasaSyncPlugin(config)
 		if nil != err {
 			return nil, err
 		}
-		return &ConfigSync{name, plugin}, nil
+		return &configSync{name, plugin}, nil
 	} else if name == "local" {
 		fmt.Println("You selected local")
 		p, err := NewLocalSyncPlugin(config)
 		if nil != err {
 			return nil, err
 		}
-		return &ConfigSync{name, p}, nil
+		return &configSync{name, p}, nil
 	} else if name == "debug" {
 		fmt.Println("You selected debug")
-		p, err := NewDebugSyncPlugin(config)
+		p, err := newDebugSyncPlugin(config)
 		if nil != err {
 			return nil, err
 		}
-		return &ConfigSync{name, p}, nil
+		return &configSync{name, p}, nil
 	}
 	return nil, errors.New("Unknown type")
 }
 
-func configure() ([2]ConfigSync, error) {
+func configure() ([2]configSync, error) {
 	var command string
 	var id = 0
-	res := [2]ConfigSync{}
+	res := [2]configSync{}
 	for {
 		if 2 == id {
 			break
@@ -63,7 +64,7 @@ func configure() ([2]ConfigSync, error) {
 				return res, nil
 			}
 			res[id] = *tmp
-			id += 1
+			id++
 		} else {
 			fmt.Printf("Possible value:\n\t- picasa\n\t- local\n\t- debug\n")
 		}
@@ -87,7 +88,7 @@ func main() {
 	var config string
 	flag.StringVar(&config, "config", "", "Provide config File")
 
-	var res [2]ConfigSync
+	var res [2]configSync
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
@@ -106,13 +107,13 @@ func main() {
 	} else {
 		debugIO = ioutil.Discard
 	}
-	LogInit(debugIO, os.Stdout, os.Stdout, os.Stderr)
+	logInit(debugIO, os.Stdout, os.Stdout, os.Stderr)
 
 	//Now read stuff...
 	if _, err := os.Stat(config); os.IsNotExist(err) {
 		res, err = configure()
 		if nil != err {
-			fmt.Println("Failed to create configuration with error %s\n", err)
+			fmt.Printf("Failed to create configuration with error %s\n", err)
 			os.Exit(1)
 		} else {
 			tmp, _ := json.Marshal(res)

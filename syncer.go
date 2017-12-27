@@ -2,6 +2,7 @@ package main
 
 import (
 	//	"io/ioutil"
+	"errors"
 	"mime"
 	"path"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/jmcvetta/randutil"
 	//	"math"
+
 	"os"
 )
 
@@ -52,13 +54,13 @@ type SyncPlugin interface {
 // Syncer object
 type Syncer struct {
 	// list of entries that have been encountered
-	browseEntryList map[string]*BrowseEntry
+	browseEntryList map[string]*browseEntry
 }
 
 // NewSyncer will create a Syncer instance
 func NewSyncer() *Syncer {
 	var syncer = new(Syncer)
-	syncer.browseEntryList = make(map[string]*BrowseEntry)
+	syncer.browseEntryList = make(map[string]*browseEntry)
 	return syncer
 }
 
@@ -68,7 +70,7 @@ func (s *Syncer) Sync(src, dst SyncPlugin) {
 }
 
 // AddNewJob add new job to do
-func (s *Syncer) AddNewJob(e *BrowseEntry) {
+func (s *Syncer) AddNewJob(e *browseEntry) {
 	//We received a new job to do add it to the list
 	_, ok := s.browseEntryList[e.me.GetPath()]
 	if !ok {
@@ -93,11 +95,11 @@ func (s *Syncer) syncLocal(src, dst SyncPlugin) {
 		ERROR.Print("Something went wrong ", err)
 		return
 	}
-	mainEntry := &BrowseEntry{status: 0, me: &main}
+	mainEntry := &browseEntry{status: 0, me: &main}
 	s.browseEntryList[main.GetPath()] = mainEntry
 	for _, file := range fileList {
 		if file.IsDir {
-			var entry = new(BrowseEntry)
+			var entry = new(browseEntry)
 			entry.status = 0
 			entry.me = new(SyncResourceInfo)
 			*entry.me = file
@@ -108,8 +110,8 @@ func (s *Syncer) syncLocal(src, dst SyncPlugin) {
 	nbWorkers := 4
 	nbRunningJobs := 0
 	i := 0
-	jobChan := make(chan *BrowseEntry, nbWorkers)
-	resultChan := make(chan *BrowseEntry)
+	jobChan := make(chan *browseEntry, nbWorkers)
+	resultChan := make(chan *browseEntry)
 	for i < nbWorkers {
 		i = i + 1
 		go syncWorker(src, dst, jobChan, resultChan)
@@ -119,7 +121,7 @@ func (s *Syncer) syncLocal(src, dst SyncPlugin) {
 			entry.status = 1
 			INFO.Printf("Pushing new job %p %s\n", entry, entry)
 			jobChan <- entry
-			nbRunningJobs = nbRunningJobs + 1
+			nbRunningJobs++
 		}
 	}
 	for {
@@ -130,7 +132,7 @@ func (s *Syncer) syncLocal(src, dst SyncPlugin) {
 			continue
 		}
 		//This means the job was finished
-		nbRunningJobs = nbRunningJobs - 1
+		nbRunningJobs--
 		//Now that we have a job done, try look if we can start some new workers
 
 		for {
@@ -141,7 +143,7 @@ func (s *Syncer) syncLocal(src, dst SyncPlugin) {
 				nextEntry.status = 1
 				DEBUG.Printf("%s\n", s.browseEntryList)
 				jobChan <- nextEntry
-				nbRunningJobs = nbRunningJobs + 1
+				nbRunningJobs++
 				continue
 			} else if !pending {
 				close(jobChan)
@@ -154,17 +156,17 @@ func (s *Syncer) syncLocal(src, dst SyncPlugin) {
 	}
 }
 
-type BrowseEntry struct {
+type browseEntry struct {
 	status int
 	me     *SyncResourceInfo
-	parent *BrowseEntry
+	parent *browseEntry
 }
 
-func (b *BrowseEntry) String() string {
+func (b *browseEntry) String() string {
 	return b.me.String()
 }
 
-func (s *Syncer) hasPendingJobs() (pending bool, next *BrowseEntry) {
+func (s *Syncer) hasPendingJobs() (pending bool, next *browseEntry) {
 	pending = false
 	for _, entry := range s.browseEntryList {
 		switch entry.status {
@@ -190,21 +192,12 @@ func (s *Syncer) hasPendingJobs() (pending bool, next *BrowseEntry) {
 	return pending, nil
 }
 
-func syncWorker(src, dst SyncPlugin, jobChan <-chan *BrowseEntry, newJobChan chan<- *BrowseEntry) {
+func syncWorker(src, dst SyncPlugin, jobChan <-chan *browseEntry, newJobChan chan<- *browseEntry) {
 	for job := range jobChan {
 		folder := job.me.GetPath()
 		//Check if this folder exists, other wise create it
 		//Exclude the / folder which shouldn't be created
 		if !dst.HasFolder(folder) {
-			//base := filepath.Base(folder)
-			//parent := filepath.Dir(folder)
-			//TODO create a temporary file for the download
-			//err := src.DownloadResource(job.me)
-			//if nil != err {
-			//	job.status = 3
-			//	newJobChan <- job
-			//	return
-			//}
 			err := dst.AddResource(job.me)
 			if nil != err {
 				ERROR.Print("Failed to add resource ", err)
@@ -229,74 +222,98 @@ func syncWorker(src, dst SyncPlugin, jobChan <-chan *BrowseEntry, newJobChan cha
 			return
 		}
 		//os.Exit(1)
-		for _, file := range fileList {
-			//Lookup for file and folder on the file system
-			extension := filepath.Ext(file.Name)
-
-			if file.IsDir {
-				//Entry is a directory, create the directory remotely
-				folderPath := file.Parent
-				if file.Parent != "/" {
-					//Special Case of the local file
-					folderPath += "/"
-				}
-				folderPath += file.Name
-				if !dst.HasFolder(folderPath) {
-					INFO.Printf("Creating new folder %s", folderPath)
-					err = dst.AddResource(&file)
-					if err != nil {
-						ERROR.Println("Failed to create Resource folder ", folderPath, " with error ", err)
-						//Skip this folder, since we couldn't create the folder itself
-						continue
-					}
-				} else {
-					INFO.Printf("Folder already exists adding it to the list of sub folder to handle")
-				}
-				browseEntry := BrowseEntry{status: 0, me: &file, parent: job}
-				INFO.Printf("Pushing %s\n", browseEntry.me)
-				//Send message that a new folder has been encountered
-				newJobChan <- &browseEntry
-			} else {
-				mimeType := mime.TypeByExtension(extension)
-				if !(strings.HasPrefix(mimeType, "image") || strings.HasPrefix(mimeType, "video")) {
-					INFO.Printf("Found %s that can't be uploaded", file.Name)
-					continue
-				}
-				file.MimeType = mimeType
-				var found = false
-				for _, existingEntry := range entries {
-					//fmt.Printf("Comparing %s with %s \n", existingEntry.Name, entry.Name)
-					if existingEntry.Name == file.Name {
-						found = true
-					}
-				}
-				if !found {
-					//Download the file
-					rndName, _ := randutil.AlphaString(20)
-					tmpFilename := filepath.Join("/tmp", rndName)
-					file.Path = tmpFilename
-					err = src.DownloadResource(&file)
-					if nil != err {
-						ERROR.Printf("Failed to download resource %s\n", file.GetPath())
-						continue
-					}
-					err = dst.AddResource(&file)
-					INFO.Printf("Adding new Resource %s\n", file.Name)
-					if err != nil {
-						ERROR.Println("Failed to add entry ", file.Name, " with error ", err)
-					}
-					if tmpFilename == file.Path {
-						os.Remove(tmpFilename)
-					}
-				} else {
-					INFO.Printf("%s already exists\n", file.Name)
-				}
-			}
-		}
+		newJobChan = doTheWork(fileList, dst, job, newJobChan, entries, src)
 		INFO.Printf("Done with the work")
 		//Notify the syncer that our job is done, and wait now for new inputs
 		job.status = 2
 		INFO.Printf("Job %s is done sending done message to main loop\n", folder)
 		newJobChan <- job
 	}
+}
+func doTheWork(fileList []SyncResourceInfo, dst SyncPlugin, job *browseEntry, newJobChan chan<- *browseEntry, entries []SyncResourceInfo, src SyncPlugin) chan<- *browseEntry {
+	for _, file := range fileList {
+		//Lookup for file and folder on the file system
+
+		if file.IsDir {
+			if err := createDirJob(file, newJobChan, dst, job); err != nil {
+				continue
+			}
+		} else {
+			if err := handleFile(file, entries, src, dst); err != nil {
+				continue
+			}
+		}
+	}
+	return newJobChan
+}
+
+func downloadFile(src, dst SyncPlugin, file SyncResourceInfo) error {
+	//Download the file
+	rndName, _ := randutil.AlphaString(20)
+	tmpFilename := filepath.Join("/tmp", rndName)
+	file.Path = tmpFilename
+	err := src.DownloadResource(&file)
+	if nil != err {
+		ERROR.Printf("Failed to download resource %s\n", file.GetPath())
+		return err
+	}
+	err = dst.AddResource(&file)
+	INFO.Printf("Adding new Resource %s\n", file.Name)
+	if err != nil {
+		ERROR.Println("Failed to add entry ", file.Name, " with error ", err)
+	}
+	if tmpFilename == file.Path {
+		os.Remove(tmpFilename)
+	}
+	return err
+}
+
+func createDirJob(file SyncResourceInfo, newJobChan chan<- *browseEntry, dst SyncPlugin, job *browseEntry) error {
+	//Entry is a directory, create the directory remotely
+	folderPath := file.Parent
+	if file.Parent != "/" {
+		//Special Case of the local file
+		folderPath += "/"
+	}
+	folderPath += file.Name
+	if !dst.HasFolder(folderPath) {
+		INFO.Printf("Creating new folder %s", folderPath)
+		err := dst.AddResource(&file)
+		if err != nil {
+			ERROR.Println("Failed to create Resource folder ", folderPath, " with error ", err)
+			//Skip this folder, since we couldn't create the folder itself
+			return err
+		}
+	} else {
+		INFO.Printf("Folder already exists adding it to the list of sub folder to handle")
+	}
+	bEntry := browseEntry{status: 0, me: &file, parent: job}
+	INFO.Printf("Pushing %s\n", bEntry.me)
+	//Send message that a new folder has been encountered
+	newJobChan <- &bEntry
+	return nil
+}
+
+func handleFile(file SyncResourceInfo, entries []SyncResourceInfo, src, dst SyncPlugin) error {
+
+	extension := filepath.Ext(file.Name)
+	mimeType := mime.TypeByExtension(extension)
+	if !(strings.HasPrefix(mimeType, "image") || strings.HasPrefix(mimeType, "video")) {
+		INFO.Printf("Found %s that can't be uploaded", file.Name)
+		return errors.New("Can't be uploaded")
+	}
+	file.MimeType = mimeType
+	var found = false
+	for _, existingEntry := range entries {
+		//fmt.Printf("Comparing %s with %s \n", existingEntry.Name, entry.Name)
+		if existingEntry.Name == file.Name {
+			found = true
+		}
+	}
+	if !found {
+		return downloadFile(src, dst, file)
+	}
+	INFO.Printf("%s already exists\n", file.Name)
+
+	return nil
 }

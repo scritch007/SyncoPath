@@ -12,14 +12,14 @@ import (
 	"github.com/scritch007/go-simplejson"
 )
 
-type DebugSyncPlugin struct {
+type debugSyncPlugin struct {
 	File         string
 	storedStruct *simplejson.Json
 	lock         sync.Mutex
 }
 
-func NewDebugSyncPlugin(f string) (*DebugSyncPlugin, error) {
-	var a = new(DebugSyncPlugin)
+func newDebugSyncPlugin(f string) (*debugSyncPlugin, error) {
+	var a = new(debugSyncPlugin)
 	if 0 == len(f) {
 		fmt.Println("Please provide path to debug file")
 		fmt.Scanln(&f)
@@ -49,24 +49,24 @@ func NewDebugSyncPlugin(f string) (*DebugSyncPlugin, error) {
 }
 
 // Name ...
-func (p *DebugSyncPlugin) Name() string {
-	return "DebugSyncPlugin"
+func (p *debugSyncPlugin) Name() string {
+	return "debugSyncPlugin"
 }
 
 // Lock log plugin
-func (p *DebugSyncPlugin) Lock() {
+func (p *debugSyncPlugin) Lock() {
 	DEBUG.Println("Locking")
 	p.lock.Lock()
 }
 
 // Unlock unlock plugin
-func (p *DebugSyncPlugin) Unlock() {
+func (p *debugSyncPlugin) Unlock() {
 	p.lock.Unlock()
 	DEBUG.Println("Unlocked")
 }
 
 // BrowseFolder ..
-func (p *DebugSyncPlugin) BrowseFolder(folder string) ([]SyncResourceInfo, error) {
+func (p *debugSyncPlugin) BrowseFolder(folder string) ([]SyncResourceInfo, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -110,7 +110,7 @@ func (p *DebugSyncPlugin) BrowseFolder(folder string) ([]SyncResourceInfo, error
 }
 
 // HasFolder ...
-func (p *DebugSyncPlugin) HasFolder(folder string) bool {
+func (p *debugSyncPlugin) HasFolder(folder string) bool {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	splits := strings.Split(folder, "/")
@@ -119,17 +119,17 @@ func (p *DebugSyncPlugin) HasFolder(folder string) bool {
 }
 
 // RemoveResource ...
-func (p *DebugSyncPlugin) RemoveResource(r SyncResourceInfo) error {
+func (p *debugSyncPlugin) RemoveResource(r SyncResourceInfo) error {
 	return nil
 }
 
 // DownloadResource ...
-func (p *DebugSyncPlugin) DownloadResource(r *SyncResourceInfo) error {
+func (p *debugSyncPlugin) DownloadResource(r *SyncResourceInfo) error {
 	return nil
 }
 
 // AddResource ...
-func (p *DebugSyncPlugin) AddResource(r *SyncResourceInfo) error {
+func (p *debugSyncPlugin) AddResource(r *SyncResourceInfo) error {
 	DEBUG.Printf("Adding %s to path %s\n", r.Name, r.Parent)
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -167,6 +167,6 @@ func (p *DebugSyncPlugin) AddResource(r *SyncResourceInfo) error {
 }
 
 // GetResourceInfo ...
-func (p *DebugSyncPlugin) GetResourceInfo(folder string) (SyncResourceInfo, error) {
+func (p *debugSyncPlugin) GetResourceInfo(folder string) (SyncResourceInfo, error) {
 	return SyncResourceInfo{}, nil
 }

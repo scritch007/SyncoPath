@@ -19,11 +19,13 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	//"net/http/httputil"
+	"context"
+
 	"github.com/scritch007/go-simplejson"
 )
 
 var oauthCfg = &oauth2.Config{
-	//TODO: put your project's Client Id here.  To be got from https://code.google.com/apis/console
+	//TODO: put your project's Client ID here.  To be got from https://code.google.com/apis/console
 	ClientID: "106373453700-1rbn7j3e4ddvs68lmv7346evp3uif6i9.apps.googleusercontent.com",
 
 	//TODO: put your project's Client Secret value here https://code.google.com/apis/console
@@ -47,7 +49,7 @@ const albumFeedURL = "https://picasaweb.google.com/data/feed/api/user/default"
 // PicasaSyncPlugin structure
 type PicasaSyncPlugin struct {
 	initializationDone bool
-	resp               *PicasaMainResponse
+	resp               *picasaMainResponse
 	lock               sync.Mutex
 	AuthStruct         oauth2.Token
 }
@@ -62,7 +64,7 @@ func NewPicasaSyncPlugin(config string) (*PicasaSyncPlugin, error) {
 		var code string
 		_, _ = fmt.Scanln(&code)
 		fmt.Print("You just entered ", code)
-		tok, err := oauthCfg.Exchange(oauth2.NoContext, code)
+		tok, err := oauthCfg.Exchange(context.Background(), code)
 
 		if err != nil {
 			return nil, errors.New("Couldn't get credentials" + err.Error())
@@ -105,8 +107,8 @@ func (p *PicasaSyncPlugin) Unlock() {
 	DEBUG.Println("Unlocked")
 }
 
-func (p *PicasaSyncPlugin) browseAlbum(url string) (*PicasaMainResponse, error) {
-	client := oauthCfg.Client(oauth2.NoContext, &p.AuthStruct)
+func (p *PicasaSyncPlugin) browseAlbum(url string) (*picasaMainResponse, error) {
+	client := oauthCfg.Client(context.Background(), &p.AuthStruct)
 	resp, err := client.Get(url)
 	DEBUG.Printf("Accessing this URL %s\n", url)
 	if err != nil {
@@ -117,17 +119,18 @@ func (p *PicasaSyncPlugin) browseAlbum(url string) (*PicasaMainResponse, error) 
 		return nil, err
 	}
 	DEBUG.Printf("Received %s\n", buf)
-	return PicasaParse(buf)
+	return picasaParse(buf)
 }
 
 // BrowseFolder ...
 func (p *PicasaSyncPlugin) BrowseFolder(f string) ([]SyncResourceInfo, error) {
-	var parsedResp *PicasaMainResponse
+	var parsedResp *picasaMainResponse
 	var url string
 	p.Lock()
 	if !p.initializationDone {
+		var err error
 		url = albumFeedURL + "?alt=json&imgmax=d"
-		parsedResp, err := p.browseAlbum(url)
+		parsedResp, err = p.browseAlbum(url)
 		if err != nil {
 			return nil, err
 		}
@@ -145,7 +148,7 @@ func (p *PicasaSyncPlugin) BrowseFolder(f string) ([]SyncResourceInfo, error) {
 		return make([]SyncResourceInfo, 0), nil
 	}
 
-	url = albumFeedURL + "/albumid/" + album.Id.Value + "?alt=json&kind=photo&imgmax=d"
+	url = albumFeedURL + "/albumid/" + album.ID.Value + "?alt=json&kind=photo&imgmax=d"
 	parsedResp, err := p.browseAlbum(url)
 	if err != nil {
 		return nil, nil
@@ -161,10 +164,10 @@ func (p *PicasaSyncPlugin) BrowseFolder(f string) ([]SyncResourceInfo, error) {
 
 	for i, album := range parsedResp.Feed.Entries {
 		name := album.Title.Value
-		result[i] = SyncResourceInfo{Name: name, Path: album.Id.Value, Parent: f}
+		result[i] = SyncResourceInfo{Name: name, Path: album.ID.Value, Parent: f}
 		if album.Category[0].Term == "http://schemas.google.com/photos/2007#photo" {
 			result[i].IsDir = false
-			result[i].ExtraInfo = album.Media.Content[0].Url
+			result[i].ExtraInfo = album.Media.Content[0].URL
 			INFO.Printf("YESS!!! %s => %s\n", name, result[i].ExtraInfo)
 		} else {
 			result[i].IsDir = true
@@ -173,7 +176,7 @@ func (p *PicasaSyncPlugin) BrowseFolder(f string) ([]SyncResourceInfo, error) {
 	if "/" == f {
 		for i, album := range p.resp.Feed.Entries {
 			name := album.Title.Value
-			result[i+len(parsedResp.Feed.Entries)] = SyncResourceInfo{Name: name, Path: album.Id.Value, Parent: f, IsDir: true}
+			result[i+len(parsedResp.Feed.Entries)] = SyncResourceInfo{Name: name, Path: album.ID.Value, Parent: f, IsDir: true}
 		}
 	}
 	INFO.Printf("%v", result)
@@ -259,7 +262,7 @@ func (p *PicasaSyncPlugin) createAlbum(albumName string) error {
 	output, _ := xml.MarshalIndent(&album, "  ", "    ")
 	//TODO Make the call to the Google API...
 
-	client := oauthCfg.Client(oauth2.NoContext, &p.AuthStruct)
+	client := oauthCfg.Client(context.Background(), &p.AuthStruct)
 	resp, err := client.Post("https://picasaweb.google.com/data/feed/api/user/default?alt=json", "application/atom+xml", bytes.NewReader(output))
 	if nil != err {
 		ERROR.Println("Failed to create folder with error ", err)
@@ -272,7 +275,7 @@ func (p *PicasaSyncPlugin) createAlbum(albumName string) error {
 	return nil
 }
 
-func (p *PicasaSyncPlugin) uploadPhoto(inAlbum *PicasaEntry, r *SyncResourceInfo) error {
+func (p *PicasaSyncPlugin) uploadPhoto(inAlbum *picasaEntry, r *SyncResourceInfo) error {
 	bodyBuf := bytes.NewBufferString("")
 	bodyWriter := multipart.NewWriter(bodyBuf)
 
@@ -315,11 +318,11 @@ func (p *PicasaSyncPlugin) uploadPhoto(inAlbum *PicasaEntry, r *SyncResourceInfo
 	/* Close the body and send the request */
 	bodyWriter.Close()
 
-	client := oauthCfg.Client(oauth2.NoContext, &p.AuthStruct)
+	client := oauthCfg.Client(context.Background(), &p.AuthStruct)
 
 	requestBody, err := ioutil.ReadAll(bodyBuf)
 	//DO call
-	uri := albumFeedURL + "/albumid/" + inAlbum.Id.Value
+	uri := albumFeedURL + "/albumid/" + inAlbum.ID.Value
 	request, err := http.NewRequest("POST", uri, bytes.NewBuffer(requestBody))
 	contentType := "multipart/related; boundary=\"" + boundary + "\""
 	request.Header.Set("Content-Type", contentType)
@@ -397,7 +400,7 @@ func (p *PicasaSyncPlugin) buildFolderName(folder string) string {
 }
 
 //Check if the album name is in our list
-func (p *PicasaSyncPlugin) getFolder(albumName string) *PicasaEntry {
+func (p *PicasaSyncPlugin) getFolder(albumName string) *picasaEntry {
 	p.Lock()
 	defer p.Unlock()
 	for _, album := range p.resp.Feed.Entries {
