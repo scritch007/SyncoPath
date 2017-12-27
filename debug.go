@@ -4,11 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/scritch007/go-simplejson"
 	"io/ioutil"
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/scritch007/go-simplejson"
 )
 
 type DebugSyncPlugin struct {
@@ -47,21 +48,25 @@ func NewDebugSyncPlugin(f string) (*DebugSyncPlugin, error) {
 	return a, nil
 }
 
+// Name ...
 func (p *DebugSyncPlugin) Name() string {
 	return "DebugSyncPlugin"
 }
 
+// Lock log plugin
 func (p *DebugSyncPlugin) Lock() {
 	DEBUG.Println("Locking")
 	p.lock.Lock()
 }
 
+// Unlock unlock plugin
 func (p *DebugSyncPlugin) Unlock() {
 	p.lock.Unlock()
 	DEBUG.Println("Unlocked")
 }
 
-func (p *DebugSyncPlugin) BrowseFolder(folder string) (error, []SyncResourceInfo) {
+// BrowseFolder ..
+func (p *DebugSyncPlugin) BrowseFolder(folder string) ([]SyncResourceInfo, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -72,14 +77,14 @@ func (p *DebugSyncPlugin) BrowseFolder(folder string) (error, []SyncResourceInfo
 		splits := strings.Split(folder, "/")
 		jsonFolder = p.storedStruct.GetPath(splits[1:]...)
 		if jsonFolder == nil {
-			return errors.New("Folder doesn't exist"), nil
+			return nil, errors.New("Folder doesn't exist")
 		}
 	}
 
 	entries, err := jsonFolder.Map()
 	if nil != err {
 		DEBUG.Println(*jsonFolder, folder)
-		return errors.New("Wrong type"), nil
+		return nil, errors.New("Wrong type")
 	}
 	var nbEntries = 0
 	var result = make([]SyncResourceInfo, 10)
@@ -99,11 +104,12 @@ func (p *DebugSyncPlugin) BrowseFolder(folder string) (error, []SyncResourceInfo
 			copy(newSlice, result)
 			result = newSlice
 		}
-		nbEntries += 1
+		nbEntries++
 	}
-	return nil, result[:nbEntries]
+	return result[:nbEntries], nil
 }
 
+// HasFolder ...
 func (p *DebugSyncPlugin) HasFolder(folder string) bool {
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -112,13 +118,17 @@ func (p *DebugSyncPlugin) HasFolder(folder string) bool {
 	return nil != res.MustMap()
 }
 
+// RemoveResource ...
 func (p *DebugSyncPlugin) RemoveResource(r SyncResourceInfo) error {
 	return nil
 }
+
+// DownloadResource ...
 func (p *DebugSyncPlugin) DownloadResource(r *SyncResourceInfo) error {
 	return nil
 }
 
+// AddResource ...
 func (p *DebugSyncPlugin) AddResource(r *SyncResourceInfo) error {
 	DEBUG.Printf("Adding %s to path %s\n", r.Name, r.Parent)
 	p.lock.Lock()
@@ -141,9 +151,9 @@ func (p *DebugSyncPlugin) AddResource(r *SyncResourceInfo) error {
 	if err != nil {
 		return err
 	}
-	newJson, err := simplejson.NewJson(newEntry)
+	newJSON, err := simplejson.NewJson(newEntry)
 
-	j.Set(r.Name, *newJson)
+	j.Set(r.Name, *newJSON)
 	if err != nil {
 		fmt.Println("Couldn't call the Map")
 		return err
@@ -156,6 +166,7 @@ func (p *DebugSyncPlugin) AddResource(r *SyncResourceInfo) error {
 	return nil
 }
 
-func (p *DebugSyncPlugin) GetResourceInfo(folder string) (error, SyncResourceInfo) {
-	return nil, SyncResourceInfo{}
+// GetResourceInfo ...
+func (p *DebugSyncPlugin) GetResourceInfo(folder string) (SyncResourceInfo, error) {
+	return SyncResourceInfo{}, nil
 }

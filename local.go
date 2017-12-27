@@ -2,22 +2,26 @@ package main
 
 import (
 	"fmt"
-	"github.com/scritch007/go-simplejson"
 	"io"
 	"io/ioutil"
 	"mime"
 	"os"
 	"path/filepath"
+
+	simplejson "github.com/scritch007/go-simplejson"
 )
 
+// LocalSyncPlugin ...
 type LocalSyncPlugin struct {
 	Chroot string
 }
 
+// Name ...
 func (l *LocalSyncPlugin) Name() string {
 	return "Local"
 }
 
+// NewLocalSyncPlugin ...
 func NewLocalSyncPlugin(config string) (*LocalSyncPlugin, error) {
 	l := new(LocalSyncPlugin)
 	if 0 == len(config) {
@@ -36,25 +40,28 @@ func NewLocalSyncPlugin(config string) (*LocalSyncPlugin, error) {
 	return l, nil
 }
 
-func (l *LocalSyncPlugin) BrowseFolder(f string) (error, []SyncResourceInfo) {
-	real_path := filepath.Join(l.Chroot, f)
-	fileList, err := ioutil.ReadDir(real_path)
+// BrowseFolder ...
+func (l *LocalSyncPlugin) BrowseFolder(f string) ([]SyncResourceInfo, error) {
+	realPath := filepath.Join(l.Chroot, f)
+	fileList, err := ioutil.ReadDir(realPath)
 
-	DEBUG.Printf("Browsing %s which is actually %s", f, real_path)
+	DEBUG.Printf("Browsing %s which is actually %s", f, realPath)
 
 	if nil != err {
-		return err, nil
+		return nil, err
 	}
 	res := make([]SyncResourceInfo, len(fileList))
 	for i, file := range fileList {
 		res[i].IsDir = file.IsDir()
 		res[i].Name = file.Name()
 		res[i].Parent = f
-		res[i].Path = filepath.Join(real_path, file.Name())
+		res[i].Path = filepath.Join(realPath, file.Name())
 		res[i].MimeType = mime.TypeByExtension("." + filepath.Ext(file.Name()))
 	}
-	return nil, res
+	return res, nil
 }
+
+// RemoveResource ...
 func (l *LocalSyncPlugin) RemoveResource(r SyncResourceInfo) error {
 	return nil
 }
@@ -82,6 +89,7 @@ func copyFileContents(src, dst string) (err error) {
 	return
 }
 
+// AddResource ...
 func (l *LocalSyncPlugin) AddResource(r *SyncResourceInfo) error {
 	rPath := filepath.Join(l.Chroot, r.Parent, r.Name)
 	if r.IsDir {
@@ -102,6 +110,7 @@ func (l *LocalSyncPlugin) realPath(f string) string {
 	return filepath.Join(l.Chroot, f)
 }
 
+// HasFolder ...
 func (l *LocalSyncPlugin) HasFolder(f string) bool {
 	DEBUG.Printf("Looking if %s exists. Real path is %s", f, l.realPath(f))
 	if _, err := os.Stat(l.realPath(f)); os.IsNotExist(err) {
@@ -110,13 +119,15 @@ func (l *LocalSyncPlugin) HasFolder(f string) bool {
 	return true
 }
 
+// DownloadResource ...
 func (l *LocalSyncPlugin) DownloadResource(r *SyncResourceInfo) error {
 	//Do not read the information in the Path we will replace it with current file path
 	r.Path = filepath.Join(l.Chroot, r.Parent, r.Name)
 	return nil
 }
 
-func (l *LocalSyncPlugin) GetResourceInfo(folder string) (error, SyncResourceInfo) {
+// GetResourceInfo ...
+func (l *LocalSyncPlugin) GetResourceInfo(folder string) (SyncResourceInfo, error) {
 	var name, parent string
 	if folder == "/" {
 		name = "/"
@@ -126,5 +137,5 @@ func (l *LocalSyncPlugin) GetResourceInfo(folder string) (error, SyncResourceInf
 		parent = filepath.Dir(folder)
 	}
 	s := SyncResourceInfo{Name: name, Parent: parent, Path: filepath.Join(l.Chroot, folder), IsDir: true}
-	return nil, s
+	return s, nil
 }

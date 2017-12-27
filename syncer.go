@@ -2,15 +2,17 @@ package main
 
 import (
 	//	"io/ioutil"
-	"github.com/jmcvetta/randutil"
 	"mime"
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/jmcvetta/randutil"
 	//	"math"
 	"os"
 )
 
+// SyncResourceInfo carry information about the resource
 type SyncResourceInfo struct {
 	Name      string
 	Path      string
@@ -20,6 +22,7 @@ type SyncResourceInfo struct {
 	ExtraInfo string
 }
 
+// GetPath returns the path of the resource
 func (s *SyncResourceInfo) GetPath() string {
 	return path.Join(s.Parent, s.Name)
 }
@@ -29,37 +32,42 @@ func (s *SyncResourceInfo) String() string {
 }
 
 // SyncPlugin interface
-// Name() should return the name if the plugin, this is for debug purpose only
-// BrowseFolder should only return the list of files, and not subfolders
-// RemoveResource is not used Yet
-// AddResource create a new Folder or a new File
-// HasFolder check if folder already exists
 type SyncPlugin interface {
+	// Name should return the name if the plugin, this is for debug purpose only
 	Name() string
-	BrowseFolder(f string) (error, []SyncResourceInfo)
+	// BrowseFolder should only return the list of files, and not subfolders
+	BrowseFolder(f string) ([]SyncResourceInfo, error)
+	// RemoveResource is not used Yet
 	RemoveResource(r SyncResourceInfo) error
+	// AddResource create a new Folder or a new File
 	AddResource(r *SyncResourceInfo) error
+	// HasFolder check if folder already exists
 	HasFolder(folder string) bool
+	// DownloadResource will download the resource
 	DownloadResource(r *SyncResourceInfo) error
-	GetResourceInfo(folder string) (error, SyncResourceInfo)
+	// GetResourceInfo return information about the resource
+	GetResourceInfo(folder string) (SyncResourceInfo, error)
 }
 
+// Syncer object
 type Syncer struct {
 	// list of entries that have been encountered
 	browseEntryList map[string]*BrowseEntry
 }
 
+// NewSyncer will create a Syncer instance
 func NewSyncer() *Syncer {
 	var syncer = new(Syncer)
 	syncer.browseEntryList = make(map[string]*BrowseEntry)
 	return syncer
 }
 
-// Call the syncer with it's SyncPlugin
+// Sync calls the syncer with it's SyncPlugin
 func (s *Syncer) Sync(src, dst SyncPlugin) {
 	s.syncLocal(src, dst)
 }
 
+// AddNewJob add new job to do
 func (s *Syncer) AddNewJob(e *BrowseEntry) {
 	//We received a new job to do add it to the list
 	_, ok := s.browseEntryList[e.me.GetPath()]
@@ -73,27 +81,27 @@ func (s *Syncer) AddNewJob(e *BrowseEntry) {
 }
 
 func (s *Syncer) syncLocal(src, dst SyncPlugin) {
-	err, fileList := src.BrowseFolder("/")
+	fileList, err := src.BrowseFolder("/")
 	if nil != err {
 		ERROR.Print("Something went wrong ", err)
 		return
 	}
 
 	DEBUG.Printf("Syncing from %s to %s\n", src.Name(), dst.Name())
-	err, main := src.GetResourceInfo("/")
+	main, err := src.GetResourceInfo("/")
 	if nil != err {
 		ERROR.Print("Something went wrong ", err)
 		return
 	}
-	main_entry := &BrowseEntry{status: 0, me: &main}
-	s.browseEntryList[main.GetPath()] = main_entry
+	mainEntry := &BrowseEntry{status: 0, me: &main}
+	s.browseEntryList[main.GetPath()] = mainEntry
 	for _, file := range fileList {
 		if file.IsDir {
 			var entry = new(BrowseEntry)
 			entry.status = 0
 			entry.me = new(SyncResourceInfo)
-			(*entry.me) = file
-			entry.parent = main_entry
+			*entry.me = file
+			entry.parent = mainEntry
 			s.AddNewJob(entry)
 		}
 	}
@@ -206,14 +214,14 @@ func syncWorker(src, dst SyncPlugin, jobChan <-chan *BrowseEntry, newJobChan cha
 			}
 		}
 
-		err, fileList := src.BrowseFolder(folder)
+		fileList, err := src.BrowseFolder(folder)
 		if nil != err {
 			ERROR.Print("Something went wrong ", err)
 			job.status = 3
 			newJobChan <- job
 			return
 		}
-		err, entries := dst.BrowseFolder(folder)
+		entries, err := dst.BrowseFolder(folder)
 		if err != nil {
 			ERROR.Println("Failed to browse entries ", err)
 			job.status = 3
@@ -227,17 +235,17 @@ func syncWorker(src, dst SyncPlugin, jobChan <-chan *BrowseEntry, newJobChan cha
 
 			if file.IsDir {
 				//Entry is a directory, create the directory remotely
-				folder_path := file.Parent
+				folderPath := file.Parent
 				if file.Parent != "/" {
 					//Special Case of the local file
-					folder_path += "/"
+					folderPath += "/"
 				}
-				folder_path += file.Name
-				if !dst.HasFolder(folder_path) {
-					INFO.Printf("Creating new folder %s", folder_path)
+				folderPath += file.Name
+				if !dst.HasFolder(folderPath) {
+					INFO.Printf("Creating new folder %s", folderPath)
 					err = dst.AddResource(&file)
 					if err != nil {
-						ERROR.Println("Failed to create Resource folder ", folder_path, " with error ", err)
+						ERROR.Println("Failed to create Resource folder ", folderPath, " with error ", err)
 						//Skip this folder, since we couldn't create the folder itself
 						continue
 					}
@@ -256,17 +264,17 @@ func syncWorker(src, dst SyncPlugin, jobChan <-chan *BrowseEntry, newJobChan cha
 				}
 				file.MimeType = mimeType
 				var found = false
-				for _, existing_entry := range entries {
-					//fmt.Printf("Comparing %s with %s \n", existing_entry.Name, entry.Name)
-					if existing_entry.Name == file.Name {
+				for _, existingEntry := range entries {
+					//fmt.Printf("Comparing %s with %s \n", existingEntry.Name, entry.Name)
+					if existingEntry.Name == file.Name {
 						found = true
 					}
 				}
 				if !found {
 					//Download the file
-					rnd_name, _ := randutil.AlphaString(20)
-					tmp_filename := filepath.Join("/tmp", rnd_name)
-					file.Path = tmp_filename
+					rndName, _ := randutil.AlphaString(20)
+					tmpFilename := filepath.Join("/tmp", rndName)
+					file.Path = tmpFilename
 					err = src.DownloadResource(&file)
 					if nil != err {
 						ERROR.Printf("Failed to download resource %s\n", file.GetPath())
@@ -277,8 +285,8 @@ func syncWorker(src, dst SyncPlugin, jobChan <-chan *BrowseEntry, newJobChan cha
 					if err != nil {
 						ERROR.Println("Failed to add entry ", file.Name, " with error ", err)
 					}
-					if tmp_filename == file.Path {
-						os.Remove(tmp_filename)
+					if tmpFilename == file.Path {
+						os.Remove(tmpFilename)
 					}
 				} else {
 					INFO.Printf("%s already exists\n", file.Name)
