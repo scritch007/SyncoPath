@@ -7,6 +7,8 @@ import (
 
 	"os"
 
+	"path/filepath"
+
 	"github.com/pkg/errors"
 	"github.com/scritch007/go-ra-seagate"
 )
@@ -155,12 +157,24 @@ func (s *SeagatePlugin) HasFolder(folder string) bool {
 
 // DownloadResource will download the resource
 func (s *SeagatePlugin) DownloadResource(r *SyncResourceInfo) error {
-	return fmt.Errorf("Not implemented")
+	f, err := os.Create(r.Path)
+	if err != nil {
+		return errors.Wrap(err, "Failed to create file")
+	}
+	return s.connection.DownloadFile(path.Join(s.Path, r.Parent, r.Name), f)
 }
 
 // GetResourceInfo return information about the resource
 func (s *SeagatePlugin) GetResourceInfo(folder string) (SyncResourceInfo, error) {
-	return SyncResourceInfo{}, fmt.Errorf("Not implemented")
+	var name, parent string
+	if folder == "/" {
+		name = "/"
+		parent = "/"
+	} else {
+		name = filepath.Base(folder)
+		parent = filepath.Dir(folder)
+	}
+	return SyncResourceInfo{Name: name, Parent: parent, Path: folder, IsDir: true}, nil
 }
 
 func (s *SeagatePlugin) SyncOnlyMedia() bool {

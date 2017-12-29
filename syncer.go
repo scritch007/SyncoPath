@@ -272,7 +272,7 @@ func downloadFile(src, dst SyncPlugin, file SyncResourceInfo) error {
 	file.Path = tmpFilename
 	err := src.DownloadResource(&file)
 	if nil != err {
-		ERROR.Printf("Failed to download resource %s\n", file.GetPath())
+		ERROR.Printf("Failed to download resource %s %v\n", file.GetPath(), err)
 		return err
 	}
 	err = dst.AddResource(&file)
