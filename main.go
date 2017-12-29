@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -16,39 +15,6 @@ import (
 type configSync struct {
 	Name   string
 	Syncer SyncPlugin
-}
-
-func instantiatePlugin(name, config string) (*configSync, error) {
-	if name == "picasa" {
-		fmt.Println("You selected picasa")
-		plugin, err := NewPicasaSyncPlugin(config)
-		if nil != err {
-			return nil, err
-		}
-		return &configSync{name, plugin}, nil
-	} else if name == "local" {
-		fmt.Println("You selected local")
-		p, err := NewLocalSyncPlugin(config)
-		if nil != err {
-			return nil, err
-		}
-		return &configSync{name, p}, nil
-	} else if name == "debug" {
-		fmt.Println("You selected debug")
-		p, err := newDebugSyncPlugin(config)
-		if nil != err {
-			return nil, err
-		}
-		return &configSync{name, p}, nil
-	} else if name == "seagate" {
-		fmt.Println("You selected seagate")
-		p, err := newSeagateSyncPlugin(config)
-		if nil != err {
-			return nil, err
-		}
-		return &configSync{name, p}, nil
-	}
-	return nil, errors.New("Unknown type")
 }
 
 func configure() ([2]configSync, error) {
@@ -65,16 +31,26 @@ func configure() ([2]configSync, error) {
 		} else {
 			fmt.Println("destination")
 		}
+		for k := range syncPluginsList {
+			fmt.Printf("%s ", k)
+		}
+		fmt.Println("")
 		fmt.Scanln(&command)
-		if command == "picasa" || command == "local" || command == "debug" || command == "seagate" {
-			tmp, err := instantiatePlugin(command, "")
-			if nil != err {
-				return res, nil
+		found := false
+		for k, r := range syncPluginsList {
+			if k == command {
+				tmp, err := r.NewMethod("")
+				if nil != err {
+					return res, err
+				}
+				res[id] = configSync{Name: command, Syncer: tmp}
+				id++
+				found = true
+				break
 			}
-			res[id] = *tmp
-			id++
-		} else {
-			fmt.Printf("Possible value:\n\t- picasa\n\t- local\n\t- debug\n")
+		}
+		if !found {
+			fmt.Printf("Incorrect input %s\n", command)
 		}
 	}
 	return res, nil
@@ -121,17 +97,13 @@ func main() {
 	if _, err := os.Stat(config); os.IsNotExist(err) {
 		res, err = configure()
 		if nil != err {
-			fmt.Printf("Failed to create configuration with error %s\n", err)
-			os.Exit(1)
+			log.Fatalf("Failed to create configuration with error %s\n", err)
 		} else {
 			tmp, _ := json.Marshal(res)
 			ioutil.WriteFile(config, tmp, 777)
-
 		}
 
 	} else {
-
-		//TODO Read it
 
 		file, err := ioutil.ReadFile(config)
 		if err != nil {
@@ -147,16 +119,22 @@ func main() {
 		dstName := configuration.GetIndex(1).Get("Name").MustString()
 		dstConfig, _ := configuration.GetIndex(1).Get("Syncer").Encode()
 		fmt.Printf("%s %s", string(srcConfig), string(dstConfig))
-		tmp, err := instantiatePlugin(srcName, string(srcConfig))
+		tmp, err := syncPluginsList[srcName].NewMethod(string(srcConfig))
 		if err != nil {
 			log.Fatalf("Failed to instantiate source plugin %s : %v", srcName, err)
 		}
-		res[0] = *tmp
-		tmp, err = instantiatePlugin(dstName, string(dstConfig))
+		res[0] = configSync{
+			Name:   srcName,
+			Syncer: tmp,
+		}
+		tmp, err = syncPluginsList[dstName].NewMethod(string(dstConfig))
 		if err != nil {
 			log.Fatalf("Failed to instantiate destination plugin %s : %v", dstName, err)
 		}
-		res[1] = *tmp
+		res[1] = configSync{
+			Name:   dstName,
+			Syncer: tmp,
+		}
 
 	}
 

@@ -16,13 +16,20 @@ type LocalSyncPlugin struct {
 	Chroot string
 }
 
+func init() {
+	registerPlugin(syncPluginRegistration{
+		Name:      "local",
+		NewMethod: NewLocalSyncPlugin,
+	})
+}
+
 // Name ...
 func (l *LocalSyncPlugin) Name() string {
 	return "Local"
 }
 
 // NewLocalSyncPlugin ...
-func NewLocalSyncPlugin(config string) (*LocalSyncPlugin, error) {
+func NewLocalSyncPlugin(config string) (SyncPlugin, error) {
 	l := new(LocalSyncPlugin)
 	if 0 == len(config) {
 		fmt.Println("Please enter local path")

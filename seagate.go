@@ -20,7 +20,14 @@ type SeagatePlugin struct {
 	connection *raseagate.Connection
 }
 
-func newSeagateSyncPlugin(config string) (*SeagatePlugin, error) {
+func init() {
+	registerPlugin(syncPluginRegistration{
+		Name:      "seagate",
+		NewMethod: newSeagateSyncPlugin,
+	})
+}
+
+func newSeagateSyncPlugin(config string) (SyncPlugin, error) {
 	var c *raseagate.Client
 	var err error
 	s := SeagatePlugin{}
@@ -38,8 +45,15 @@ func newSeagateSyncPlugin(config string) (*SeagatePlugin, error) {
 		if err != nil {
 			return nil, err
 		}
+		count := 0
 		for _, d := range dList {
-			fmt.Println(d.FriendlyName)
+			if d.IsAvailable() {
+				fmt.Println(d.FriendlyName)
+				count++
+			}
+		}
+		if count == 0 {
+			return nil, fmt.Errorf("No device available")
 		}
 		fmt.Println("Select device")
 		var fName string
@@ -68,6 +82,7 @@ func newSeagateSyncPlugin(config string) (*SeagatePlugin, error) {
 		return nil, fmt.Errorf("Unknown deviceID")
 	}
 
+	fmt.Printf("=>%v", s)
 	fmt.Println("Connecting to server")
 	dList, err := c.GetDeviceList()
 	if err != nil {

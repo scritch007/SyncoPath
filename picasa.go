@@ -54,8 +54,15 @@ type PicasaSyncPlugin struct {
 	AuthStruct         oauth2.Token
 }
 
+func init() {
+	registerPlugin(syncPluginRegistration{
+		Name:      "picasa",
+		NewMethod: NewPicasaSyncPlugin,
+	})
+}
+
 // NewPicasaSyncPlugin instantiate pluging
-func NewPicasaSyncPlugin(config string) (*PicasaSyncPlugin, error) {
+func NewPicasaSyncPlugin(config string) (SyncPlugin, error) {
 
 	if 0 == len(config) {
 		//Now ask the user to go to the correct place

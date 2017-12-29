@@ -18,7 +18,14 @@ type debugSyncPlugin struct {
 	lock         sync.Mutex
 }
 
-func newDebugSyncPlugin(f string) (*debugSyncPlugin, error) {
+func init() {
+	registerPlugin(syncPluginRegistration{
+		Name:      "debug",
+		NewMethod: newDebugSyncPlugin,
+	})
+}
+
+func newDebugSyncPlugin(f string) (SyncPlugin, error) {
 	var a = new(debugSyncPlugin)
 	if 0 == len(f) {
 		fmt.Println("Please provide path to debug file")

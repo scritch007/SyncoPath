@@ -53,6 +53,22 @@ type SyncPlugin interface {
 	SyncOnlyMedia() bool
 }
 
+var (
+	syncPluginsList map[string]syncPluginRegistration
+)
+
+func registerPlugin(r syncPluginRegistration) {
+	if syncPluginsList == nil {
+		syncPluginsList = make(map[string]syncPluginRegistration)
+	}
+	syncPluginsList[r.Name] = r
+}
+
+type syncPluginRegistration struct {
+	Name      string
+	NewMethod func(config string) (SyncPlugin, error)
+}
+
 // Syncer object
 type Syncer struct {
 	// list of entries that have been encountered
