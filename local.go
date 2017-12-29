@@ -139,3 +139,7 @@ func (l *LocalSyncPlugin) GetResourceInfo(folder string) (SyncResourceInfo, erro
 	s := SyncResourceInfo{Name: name, Parent: parent, Path: filepath.Join(l.Chroot, folder), IsDir: true}
 	return s, nil
 }
+
+func (l *LocalSyncPlugin) SyncOnlyMedia() bool {
+	return false
+}

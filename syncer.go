@@ -49,6 +49,8 @@ type SyncPlugin interface {
 	DownloadResource(r *SyncResourceInfo) error
 	// GetResourceInfo return information about the resource
 	GetResourceInfo(folder string) (SyncResourceInfo, error)
+	// SyncOnlyMedia Plugin can only sync medias files
+	SyncOnlyMedia() bool
 }
 
 // Syncer object
@@ -296,13 +298,15 @@ func createDirJob(file SyncResourceInfo, newJobChan chan<- *browseEntry, dst Syn
 
 func handleFile(file SyncResourceInfo, entries []SyncResourceInfo, src, dst SyncPlugin) error {
 
-	extension := filepath.Ext(file.Name)
-	mimeType := mime.TypeByExtension(extension)
-	if !(strings.HasPrefix(mimeType, "image") || strings.HasPrefix(mimeType, "video")) {
-		INFO.Printf("Found %s that can't be uploaded", file.Name)
-		return errors.New("Can't be uploaded")
+	if dst.SyncOnlyMedia() {
+		extension := filepath.Ext(file.Name)
+		mimeType := mime.TypeByExtension(extension)
+		if !(strings.HasPrefix(mimeType, "image") || strings.HasPrefix(mimeType, "video")) {
+			INFO.Printf("Found %s that can't be uploaded", file.Name)
+			return errors.New("Can't be uploaded")
+		}
+		file.MimeType = mimeType
 	}
-	file.MimeType = mimeType
 	var found = false
 	for _, existingEntry := range entries {
 		//fmt.Printf("Comparing %s with %s \n", existingEntry.Name, entry.Name)

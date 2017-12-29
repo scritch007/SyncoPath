@@ -170,3 +170,7 @@ func (p *debugSyncPlugin) AddResource(r *SyncResourceInfo) error {
 func (p *debugSyncPlugin) GetResourceInfo(folder string) (SyncResourceInfo, error) {
 	return SyncResourceInfo{}, nil
 }
+
+func (p *debugSyncPlugin) SyncOnlyMedia() bool {
+	return false
+}

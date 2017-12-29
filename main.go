@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 
 	"github.com/scritch007/go-simplejson"
@@ -39,6 +40,13 @@ func instantiatePlugin(name, config string) (*configSync, error) {
 			return nil, err
 		}
 		return &configSync{name, p}, nil
+	} else if name == "seagate" {
+		fmt.Println("You selected seagate")
+		p, err := newSeagateSyncPlugin(config)
+		if nil != err {
+			return nil, err
+		}
+		return &configSync{name, p}, nil
 	}
 	return nil, errors.New("Unknown type")
 }
@@ -58,7 +66,7 @@ func configure() ([2]configSync, error) {
 			fmt.Println("destination")
 		}
 		fmt.Scanln(&command)
-		if command == "picasa" || command == "local" || command == "debug" {
+		if command == "picasa" || command == "local" || command == "debug" || command == "seagate" {
 			tmp, err := instantiatePlugin(command, "")
 			if nil != err {
 				return res, nil
@@ -140,8 +148,14 @@ func main() {
 		dstConfig, _ := configuration.GetIndex(1).Get("Syncer").Encode()
 		fmt.Printf("%s %s", string(srcConfig), string(dstConfig))
 		tmp, err := instantiatePlugin(srcName, string(srcConfig))
+		if err != nil {
+			log.Fatalf("Failed to instantiate source plugin %s : %v", srcName, err)
+		}
 		res[0] = *tmp
 		tmp, err = instantiatePlugin(dstName, string(dstConfig))
+		if err != nil {
+			log.Fatalf("Failed to instantiate destination plugin %s : %v", dstName, err)
+		}
 		res[1] = *tmp
 
 	}

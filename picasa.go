@@ -430,3 +430,7 @@ func (p *PicasaSyncPlugin) HasFolder(folder string) bool {
 func (p *PicasaSyncPlugin) GetResourceInfo(folder string) (SyncResourceInfo, error) {
 	return SyncResourceInfo{}, nil
 }
+
+func (p *PicasaSyncPlugin) SyncOnlyMedia() bool {
+	return true
+}
