@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/scritch007/go-simplejson"
+	"github.com/bitly/go-simplejson"
 )
 
 type debugSyncPlugin struct {
@@ -165,7 +165,7 @@ func (p *debugSyncPlugin) AddResource(r *SyncResourceInfo) error {
 		fmt.Println("Couldn't call the Map")
 		return err
 	}
-	res, err := p.storedStruct.EncodeIndent("", "  ")
+	res, err := p.storedStruct.EncodePretty()
 	if err != nil {
 		return err
 	}

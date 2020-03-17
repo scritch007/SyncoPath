@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/pkg/errors"
-	"github.com/scritch007/go-ra-seagate"
+	raseagate "github.com/scritch007/go-ra-seagate"
 )
 
 // SyncPlugin interface

@@ -9,7 +9,9 @@ import (
 	"log"
 	"os"
 
-	"github.com/scritch007/go-simplejson"
+	"github.com/bitly/go-simplejson"
+
+	"github.com/spf13/cobra"
 )
 
 type configSync struct {
@@ -55,33 +57,36 @@ func configure() ([2]configSync, error) {
 	}
 	return res, nil
 }
+
+var rootCmd = cobra.Command{
+	Use:   "SyncoPath",
+	Short: "Sync things with various backend",
+	Long:  `[Warning] Picasa doesn't work as destination because folder creation is forbidden now`,
+	Run:   mainFunc,
+}
+
+var (
+	fromremote bool
+	help       bool
+	verbose    bool
+	config     string
+)
+
+func init() {
+	rootCmd.PersistentFlags().BoolVar(&fromremote, "from_remote", false, "Inverse configuration")
+	rootCmd.PersistentFlags().BoolVar(&help, "help", false, "Show help")
+	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "Enable verbose mode")
+	rootCmd.PersistentFlags().StringVar(&config, "config", "", "config file (default is $HOME/.cobra.yaml)")
+}
 func main() {
+	rootCmd.Execute()
+}
 
-	var fromremote = false
-	flag.BoolVar(&fromremote, "from_remote", false, "Take remote as source")
-
-	var help = false
-	flag.BoolVar(&help, "help", false, "Display Help")
-
-	var verbose bool
-	var verboseTooltip = "Enable the debug mode"
-
-	flag.BoolVar(&verbose, "verbose", false, verboseTooltip)
-	flag.BoolVar(&verbose, "v", false, verboseTooltip)
-
-	var config string
-	flag.StringVar(&config, "config", "", "Provide config File")
-
+func mainFunc(cmd *cobra.Command, args []string) {
 	var res [2]configSync
 
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
-		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "Mandatory argument:\n  sync_folder\n")
-	}
-	flag.Parse()
-	if 0 != flag.NArg() || 0 == len(config) {
-		flag.Usage()
+	if 0 != len(args) || 0 == len(config) {
+		cmd.Usage()
 		os.Exit(0)
 	}
 
